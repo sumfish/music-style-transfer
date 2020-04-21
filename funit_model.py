@@ -24,41 +24,49 @@ class FUNITModel(nn.Module):
 
     def forward(self, co_data, cl_data, hp, mode):
         xa = co_data[0].cuda()
-        la = co_data[1].cuda()
+        la = co_data[1].cuda() #class label
         xb = cl_data[0].cuda()
-        lb = cl_data[1].cuda()
+        lb = cl_data[1].cuda() #class label
         if mode == 'gen_update':
             c_xa = self.gen.enc_content(xa)
-            s_xa = self.gen.enc_class_model(xa)
-            s_xb = self.gen.enc_class_model(xb)
+            s_xa = self.gen.enc_class_model(xa[:,:,:,:87])
+            s_xb = self.gen.enc_class_model(xb[:,:,:,:87])
             xt = self.gen.decode(c_xa, s_xb)  # translation
             xr = self.gen.decode(c_xa, s_xa)  # reconstruction
             l_adv_t, gacc_t, xt_gan_feat = self.dis.calc_gen_loss(xt, lb)
             l_adv_r, gacc_r, xr_gan_feat = self.dis.calc_gen_loss(xr, la)
             _, xb_gan_feat = self.dis(xb, lb)
             _, xa_gan_feat = self.dis(xa, la)
+            #####################################################
+            #####################################################
             l_c_rec = recon_criterion(xr_gan_feat.mean(3).mean(2),
                                       xa_gan_feat.mean(3).mean(2))
-            l_m_rec = recon_criterion(xt_gan_feat.mean(3).mean(2),
+            #r1=xr_gan_feat.mean(3).mean(2)
+            #r2=xr_gan_feat.mean(3)   #[B,1024(channel)]
+            l_s_rec = recon_criterion(xt_gan_feat.mean(3).mean(2),
                                       xb_gan_feat.mean(3).mean(2))
             l_x_rec = recon_criterion(xr, xa)
             l_adv = 0.5 * (l_adv_t + l_adv_r)
             acc = 0.5 * (gacc_t + gacc_r)
             l_total = (hp['gan_w'] * l_adv + hp['r_w'] * l_x_rec + hp[
-                'fm_w'] * (l_c_rec + l_m_rec))
+                'fm_w'] * (l_c_rec + l_s_rec))
             l_total.backward()
-            return l_total, l_adv, l_x_rec, l_c_rec, l_m_rec, acc
+            return l_total, l_adv, l_x_rec, l_c_rec, l_s_rec, acc
         elif mode == 'dis_update':
             xb.requires_grad_()
             l_real_pre, acc_r, resp_r = self.dis.calc_dis_real_loss(xb, lb)
             l_real = hp['gan_w'] * l_real_pre
             l_real.backward(retain_graph=True)
+
+            ################################################
+            ### important gradient penalty loss
+            ################################################
             l_reg_pre = self.dis.calc_grad2(resp_r, xb)
             l_reg = 10 * l_reg_pre
             l_reg.backward()
             with torch.no_grad():
                 c_xa = self.gen.enc_content(xa)
-                s_xb = self.gen.enc_class_model(xb)
+                s_xb = self.gen.enc_class_model(xb[:,:,:,:87])
                 xt = self.gen.decode(c_xa, s_xb)
             l_fake_p, acc_f, resp_f = self.dis.calc_dis_fake_loss(xt.detach(),
                                                                   lb)
@@ -77,13 +85,13 @@ class FUNITModel(nn.Module):
         xa = co_data[0].cuda()
         xb = cl_data[0].cuda()
         c_xa_current = self.gen.enc_content(xa)
-        s_xa_current = self.gen.enc_class_model(xa)
-        s_xb_current = self.gen.enc_class_model(xb)
+        s_xa_current = self.gen.enc_class_model(xa[:,:,:,:87])
+        s_xb_current = self.gen.enc_class_model(xb[:,:,:,:87])
         xt_current = self.gen.decode(c_xa_current, s_xb_current)
         xr_current = self.gen.decode(c_xa_current, s_xa_current)
         c_xa = self.gen_test.enc_content(xa)
-        s_xa = self.gen_test.enc_class_model(xa)
-        s_xb = self.gen_test.enc_class_model(xb)
+        s_xa = self.gen_test.enc_class_model(xa[:,:,:,:87])
+        s_xb = self.gen_test.enc_class_model(xb[:,:,:,:87])
         xt = self.gen_test.decode(c_xa, s_xb)
         xr = self.gen_test.decode(c_xa, s_xa)
         self.train()
@@ -96,10 +104,10 @@ class FUNITModel(nn.Module):
         c_xa_current = self.gen_test.enc_content(xa)
         if k == 1:
             c_xa_current = self.gen_test.enc_content(xa)
-            s_xb_current = self.gen_test.enc_class_model(xb)
+            s_xb_current = self.gen_test.enc_class_model(xb[:,:,:,:87])########################
             xt_current = self.gen_test.decode(c_xa_current, s_xb_current)
         else:
-            s_xb_current_before = self.gen_test.enc_class_model(xb)
+            s_xb_current_before = self.gen_test.enc_class_model(xb[:,:,:,:87])##########################
             s_xb_current_after = s_xb_current_before.squeeze(-1).permute(1,
                                                                          2,
                                                                          0)
@@ -112,7 +120,7 @@ class FUNITModel(nn.Module):
     def compute_k_style(self, style_batch, k):
         self.eval()
         style_batch = style_batch.cuda()
-        s_xb_before = self.gen_test.enc_class_model(style_batch)
+        s_xb_before = self.gen_test.enc_class_model(style_batch[:,:,:,:87])########################
         s_xb_after = s_xb_before.squeeze(-1).permute(1, 2, 0)
         s_xb_pool = torch.nn.functional.avg_pool1d(s_xb_after, k)
         s_xb = s_xb_pool.permute(2, 0, 1).unsqueeze(-1)

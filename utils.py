@@ -6,13 +6,15 @@ Licensed under the CC BY-NC-SA 4.0 license
 import os
 import yaml
 import time
+import librosa.display
+import matplotlib.pyplot as plt
 
 import torch
 from torch.utils.data import DataLoader
 from torchvision import transforms
 import torchvision.utils as vutils
 
-from data import ImageLabelFilelist
+from data import AudioDataset
 
 
 def update_average(model_tgt, model_src, beta=0.999):
@@ -26,34 +28,17 @@ def update_average(model_tgt, model_src, beta=0.999):
 
 def loader_from_list(
         root,
-        file_list,
+        label,
         batch_size,
-        new_size=None,
-        height=128,
-        width=128,
-        crop=True,
         num_workers=4,
         shuffle=True,
-        center_crop=False,
         return_paths=False,
         drop_last=True):
-    transform_list = [transforms.ToTensor(),
-                      transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]
-    if center_crop:
-        transform_list = [transforms.CenterCrop((height, width))] + \
-                         transform_list if crop else transform_list
-    else:
-        transform_list = [transforms.RandomCrop((height, width))] + \
-                         transform_list if crop else transform_list
-    transform_list = [transforms.Resize(new_size)] + transform_list \
-        if new_size is not None else transform_list
-    if not center_crop:
-        transform_list = [transforms.RandomHorizontalFlip()] + transform_list
+    transform_list = [transforms.ToTensor()]
     transform = transforms.Compose(transform_list)
-    dataset = ImageLabelFilelist(root,
-                                 file_list,
-                                 transform,
-                                 return_paths=return_paths)
+    dataset = AudioDataset(root,
+                            label,
+                            transform)
     loader = DataLoader(dataset,
                         batch_size,
                         shuffle=shuffle,
@@ -65,34 +50,22 @@ def loader_from_list(
 def get_evaluation_loaders(conf, shuffle_content=False):
     batch_size = conf['batch_size']
     num_workers = conf['num_workers']
-    new_size = conf['new_size']
-    width = conf['crop_image_width']
-    height = conf['crop_image_height']
+
     content_loader = loader_from_list(
-            root=conf['data_folder_train'],
-            file_list=conf['data_list_train'],
+            root=conf['data_train'],
+            label=conf['label_train'],
             batch_size=batch_size,
-            new_size=new_size,
-            height=height,
-            width=width,
-            crop=True,
             num_workers=num_workers,
             shuffle=shuffle_content,
-            center_crop=True,
             return_paths=True,
             drop_last=False)
 
     class_loader = loader_from_list(
-            root=conf['data_folder_test'],
-            file_list=conf['data_list_test'],
+            root=conf['data_test'],
+            label=conf['label_test'],
             batch_size=batch_size * conf['k_shot'],
-            new_size=new_size,
-            height=height,
-            width=width,
-            crop=True,
             num_workers=1,
             shuffle=False,
-            center_crop=True,
             return_paths=True,
             drop_last=False)
     return content_loader, class_loader
@@ -100,46 +73,27 @@ def get_evaluation_loaders(conf, shuffle_content=False):
 
 def get_train_loaders(conf):
     batch_size = conf['batch_size']
-    num_workers = conf['num_workers']
-    new_size = conf['new_size']
-    width = conf['crop_image_width']
-    height = conf['crop_image_height']
+    num_workers = conf['num_workers'] ############
     train_content_loader = loader_from_list(
-            root=conf['data_folder_train'],
-            file_list=conf['data_list_train'],
+            root=conf['data_train'],
+            label=conf['label_train'],
             batch_size=batch_size,
-            new_size=new_size,
-            height=height,
-            width=width,
-            crop=True,
             num_workers=num_workers)
     train_class_loader = loader_from_list(
-            root=conf['data_folder_train'],
-            file_list=conf['data_list_train'],
+            root=conf['data_train'],
+            label=conf['label_train'],
             batch_size=batch_size,
-            new_size=new_size,
-            height=height,
-            width=width,
-            crop=True,
             num_workers=num_workers)
     test_content_loader = loader_from_list(
-            root=conf['data_folder_test'],
-            file_list=conf['data_list_test'],
+            root=conf['data_test'],
+            label=conf['label_test'],
             batch_size=batch_size,
-            new_size=new_size,
-            height=height,
-            width=width,
-            crop=True,
-            num_workers=1)
+            num_workers=0)
     test_class_loader = loader_from_list(
-            root=conf['data_folder_test'],
-            file_list=conf['data_list_test'],
+            root=conf['data_test'],
+            label=conf['label_test'],
             batch_size=batch_size,
-            new_size=new_size,
-            height=height,
-            width=width,
-            crop=True,
-            num_workers=1)
+            num_workers=0)
 
     return (train_content_loader, train_class_loader, test_content_loader,
             test_class_loader)
@@ -163,48 +117,32 @@ def make_result_folders(output_directory):
 
 
 def __write_images(im_outs, dis_img_n, file_name):
-    im_outs = [images.expand(-1, 3, -1, -1) for images in im_outs]
+    im_outs = [images.view(-1, 128, 173) for images in im_outs]
     image_tensor = torch.cat([images[:dis_img_n] for images in im_outs], 0)
+    ####spec   4.6 Batchsize
+    #plt.figure(1,figsize=(4*4,6*4))
+    plt.figure(1,figsize=(6*4,6*4))
+    for i in range(6):
+        for j in range(6):#4
+            index= (i*6)+j+1
+            plt.subplot(6, 6, index)
+            '''
+            index= (i*4)+j+1
+            plt.subplot(6, 4, index)
+            '''
+            librosa.display.specshow(image_tensor[index-1].cpu().numpy(), hop_length=256)
+    plt.savefig(file_name, dpi='figure', bbox_inches='tight')
+    plt.clf()
+    '''
     image_grid = vutils.make_grid(image_tensor.data,
                                   nrow=dis_img_n, padding=0, normalize=True)
     vutils.save_image(image_grid, file_name, nrow=1)
-
+    '''
 
 def write_1images(image_outputs, image_directory, postfix):
-    display_image_num = image_outputs[0].size(0)
+    display_image_num = image_outputs[0].size(0)  #batchsize4  #output[0] -> [4,1,128,173] #img_out len=6
     __write_images(image_outputs, display_image_num,
                    '%s/gen_%s.jpg' % (image_directory, postfix))
-
-
-def _write_row(html_file, it, fn, all_size):
-    html_file.write("<h3>iteration [%d] (%s)</h3>" % (it, fn.split('/')[-1]))
-    html_file.write("""
-        <p><a href="%s">
-          <img src="%s" style="width:%dpx">
-        </a><br>
-        <p>
-        """ % (fn, fn, all_size))
-    return
-
-
-def write_html(filename, it, img_save_it, img_dir, all_size=1536):
-    html_file = open(filename, "w")
-    html_file.write('''
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <title>Experiment name = %s</title>
-      <meta http-equiv="refresh" content="30">
-    </head>
-    <body>
-    ''' % os.path.basename(filename))
-    html_file.write("<h3>current</h3>")
-    _write_row(html_file, it, '%s/gen_train_current.jpg' % img_dir, all_size)
-    for j in range(it, img_save_it - 1, -1):
-        _write_row(html_file, j, '%s/gen_train_%08d.jpg' % (img_dir, j),
-                   all_size)
-    html_file.write("</body></html>")
-    html_file.close()
 
 
 def write_loss(iterations, trainer, train_writer):
@@ -216,7 +154,10 @@ def write_loss(iterations, trainer, train_writer):
                         or 'nwd' in attr
                         or 'accuracy' in attr))]
     for m in members:
-        train_writer.add_scalar(m, getattr(trainer, m), iterations + 1)
+        # getattr 拿某屬性的值
+        # tag --> section/plot tensorboard會按照section來分組顯示
+        # ex: accuracy/ vali or test
+        train_writer.add_scalar(m, getattr(trainer, m), iterations + 1)  #tag, value, iteration
 
 
 class Timer:

@@ -14,7 +14,7 @@ from torch.optim import lr_scheduler
 
 from funit_model import FUNITModel
 
-
+############## ????????
 def update_average(model_tgt, model_src, beta=0.999):
     with torch.no_grad():
         param_dict_src = dict(model_src.named_parameters())
@@ -32,21 +32,37 @@ class Trainer(nn.Module):
         lr_dis = cfg['lr_dis']
         dis_params = list(self.model.dis.parameters())
         gen_params = list(self.model.gen.parameters())
+        
+        ########## load pre-train
+        style_en_pt=torch.load(cfg['style_pt'])
+        content_en_pt=torch.load(cfg['content_pt'])
+        self.model.gen.enc_class_model.load_state_dict(style_en_pt['model'])
+        self.model.gen.enc_content.load_state_dict(content_en_pt['encoder'])
+
+        ########## freeze encoder parameter
+        for p in self.model.gen.enc_content.parameters():
+            p.requires_grad= False
+        for p in self.model.gen.enc_class_model.parameters():
+            p.requires_grad= False
+
+        #################### parameter
         self.dis_opt = torch.optim.RMSprop(
             [p for p in dis_params if p.requires_grad],
             lr=lr_gen, weight_decay=cfg['weight_decay'])
         self.gen_opt = torch.optim.RMSprop(
             [p for p in gen_params if p.requires_grad],
             lr=lr_dis, weight_decay=cfg['weight_decay'])
-        self.dis_scheduler = get_scheduler(self.dis_opt, cfg)
-        self.gen_scheduler = get_scheduler(self.gen_opt, cfg)
-        self.apply(weights_init(cfg['init']))
+        
+        ##################### not understand
+        self.dis_scheduler = get_scheduler(self.dis_opt, cfg) 
+        self.gen_scheduler = get_scheduler(self.gen_opt, cfg) 
+        self.apply(weights_init(cfg['init'])) 
         self.model.gen_test = copy.deepcopy(self.model.gen)
 
     def gen_update(self, co_data, cl_data, hp, multigpus):
         self.gen_opt.zero_grad()
-        al, ad, xr, cr, sr, ac = self.model(co_data, cl_data, hp, 'gen_update')
-        self.loss_gen_total = torch.mean(al)
+        total, ad, xr, cr, sr, ac = self.model(co_data, cl_data, hp, 'gen_update')
+        self.loss_gen_total = torch.mean(total)
         self.loss_gen_recon_x = torch.mean(xr)
         self.loss_gen_recon_c = torch.mean(cr)
         self.loss_gen_recon_s = torch.mean(sr)
@@ -77,7 +93,11 @@ class Trainer(nn.Module):
 
         last_model_name = get_model_list(checkpoint_dir, "gen")
         state_dict = torch.load(last_model_name)
-        this_model.gen.load_state_dict(state_dict['gen'])
+        ###################
+        ###################
+        #this_model.gen.load_state_dict(state_dict['gen'])
+        ########## load dec only ///encoder was pre-loaded
+        this_model.gen.dec.load_state_dict(state_dict['gen.dec'])
         this_model.gen_test.load_state_dict(state_dict['gen_test'])
         iterations = int(last_model_name[-11:-3])
 
@@ -100,8 +120,13 @@ class Trainer(nn.Module):
         gen_name = os.path.join(snapshot_dir, 'gen_%08d.pt' % (iterations + 1))
         dis_name = os.path.join(snapshot_dir, 'dis_%08d.pt' % (iterations + 1))
         opt_name = os.path.join(snapshot_dir, 'optimizer.pt')
+        #######################
+        #### gen_dec --> only for decoder
+        #### so you can load encoder/decoder seperately
+        #######################
         torch.save({'gen': this_model.gen.state_dict(),
-                    'gen_test': this_model.gen_test.state_dict()}, gen_name)
+                    'gen.dec':this_model.gen.dec.state_dict(),
+                    'gen_test': this_model.gen_test.state_dict()}, gen_name) 
         torch.save({'dis': this_model.dis.state_dict()}, dis_name)
         torch.save({'gen': self.gen_opt.state_dict(),
                     'dis': self.dis_opt.state_dict()}, opt_name)
