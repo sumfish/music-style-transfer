@@ -83,7 +83,7 @@ class GPPatchMcResDis(nn.Module):
         # np.prod 所有乘積
         total_count = torch.tensor(np.prod(resp_fake.size()),
                                    dtype=torch.float).cuda()
-        ############## ad loss
+        ############## ad loss (wgan)
         loss = -resp_fake.mean()
         ##############
         correct_count = (resp_fake >= 0).sum()
@@ -112,7 +112,7 @@ class FewShotGen(nn.Module):
         latent_dim = hp['latent_dim']
         num_classes = hp['num_classes']
         kernel = hp['kernel']
-        self.content_dim= hp['content_dim']
+        self.content_d= hp['content_dim']
         self.style_dim = hp['latent_dim']
         self.enc_class_model = ClassModelEncoder(latent_dim,
                                                  num_classes,
@@ -155,11 +155,14 @@ class FewShotGen(nn.Module):
         # concatenate
         model_code_flat=model_code.view(-1)  #1d
         #print(model_code)
-        temp_style=model_code_flat.repeat(self.content_dim,1).t()
+        #print(model_code_flat)
+        content_dim=content.size(2)
+        #print(model_code_flat.repeat(content_dim,1))
+        temp_style=model_code_flat.repeat(content_dim,1).t()
         #print(temp_style)
-        temp_style=temp_style.view(-1,self.style_dim,self.content_dim)
+        temp_style=temp_style.view(-1,self.style_dim,content_dim)
         #print(temp_style)
-        content=content.view(-1,1,self.content_dim)
+        #content=content.view(-1,1,content_dim)
         #print(content)
         combined=torch.cat((content,temp_style),dim=1)
         #print(combined.shape)
@@ -269,21 +272,23 @@ class ContentEncoder(nn.Module):   #new ,1d ,no connected layer
         super(ContentEncoder, self).__init__()
         self.c_in=mel_d ###128=mel dimension
         self.c_out=1
-        self.c_m=64
+        self.c_m1=128
+        self.c_m2=64
         self.kernel=kernel
         self.stride=[1,2]
-        self.conv1 = nn.Conv1d(self.c_in, self.c_in, kernel_size=1) 
-        self.norm_layer = nn.BatchNorm1d(self.c_in)
+        self.conv1 = nn.Conv1d(self.c_in, self.c_m1, kernel_size=1) 
+        self.norm_layer = nn.BatchNorm1d(self.c_m1)
         self.act = nn.ReLU()
         self.drop_out = nn.Dropout(p=0.25) 
-        #self.conv_last = res_block1d(self.c_m, self.c_out, self.kernel, self.stride)     
+        self.conv_last2 =res_block1d(self.c_m1, self.c_m2, self.kernel, self.stride)
+        self.conv_last1 = res_block1d(self.c_m2, self.c_out, self.kernel, self.stride)
 
         self.head = nn.Sequential(
-            res_block1d(self.c_in, self.c_in, self.kernel, self.stride),
-            res_block1d(self.c_in, self.c_in, self.kernel, self.stride),
-            res_block1d(self.c_in, self.c_m, self.kernel, self.stride),
-            res_block1d(self.c_m, self.c_m, self.kernel, self.stride),
-            res_block1d(self.c_m, self.c_out, self.kernel, self.stride),
+            res_block1d(self.c_m1, self.c_m1, self.kernel, self.stride),
+            res_block1d(self.c_m1, self.c_m1, self.kernel, self.stride),
+            res_block1d(self.c_m1, self.c_m1, self.kernel, self.stride),
+            #res_block1d(self.c_m, self.c_m, self.kernel, self.stride),
+            #res_block1d(self.c_m, self.c_out, self.kernel, self.stride),
         )
     def forward(self, _input):
         x = _input
@@ -301,12 +306,15 @@ class ContentEncoder(nn.Module):   #new ,1d ,no connected layer
 
         #### residual
         x = self.head(x)
+        x = self.conv_last2(x)
+        temp = x
+        x = self.conv_last1(x)
         #print('level 1(after res):{}'.format(x.shape))
-        #x = self.conv_last(embed)
-        x = x.view(-1, x.size(2))
+        #x = x.view(-1, x.size(1), x.size(2))
+        #x = x.view(-1, x.size(2))
         #print('level 1(after res):{}'.format(x.shape))
         #input()
-        return x
+        return temp
 
 class res_block_up(nn.Module):
     def __init__(self, inp, out, kernel, stride_list):
@@ -315,7 +323,6 @@ class res_block_up(nn.Module):
         self.bn2 = nn.BatchNorm1d(inp)
         self.conv2 = nn.Conv1d(inp, out, kernel_size=kernel, stride=stride_list[0], padding=kernel//2)
         self.bn3 = nn.BatchNorm1d(out)
-        self.add_conv = nn.Conv1d(inp, out, kernel_size=kernel, stride=stride_list[0], padding=kernel//2)
         if inp!=out:
             print('upsmaple')
             upsample = True
@@ -348,17 +355,18 @@ class Decoder(nn.Module):
     def __init__(self, mel_d, kernel):
         super(Decoder, self).__init__()
         self.c_out=mel_d ###128=mel dimension
-        self.c_in=65 #128+1
-        self.c_m=64
+        self.c_in=128 #128+1
+        self.c_m=128
         self.kernel=kernel
         self.stride=[1]
         self.conv_first = nn.Conv1d(self.c_in, self.c_m, kernel_size=1) 
-        self.conv_mid = nn.Conv1d(self.c_m, self.c_m, kernel_size=2) 
+        #self.conv_mid = nn.Conv1d(self.c_m, self.c_m, kernel_size=2) 
         self.conv_last = nn.Conv1d(self.c_m, self.c_out, kernel_size=4) 
         self.res1=res_block_up(self.c_m, self.c_m, self.kernel, self.stride)
         
         self.head = nn.Sequential(
             #PrintLayer(),
+            Upsample(scale_factor=2),
             res_block_up(self.c_m, self.c_m, self.kernel, self.stride),
             Upsample(scale_factor=2),
             #PrintLayer(),
@@ -369,15 +377,15 @@ class Decoder(nn.Module):
             Upsample(scale_factor=2),
             #PrintLayer(),
             res_block_up(self.c_m, self.c_m, self.kernel, self.stride),
-            Upsample(scale_factor=2),
+            #Upsample(scale_factor=2),
             #PrintLayer(),
         )
 
     def forward(self, x):
         x = self.conv_first(x)
-        x = self.res1(x)
-        x = upsample(x,scale_factor=2)
-        x = self.conv_mid(x)
+        #x = upsample(x,scale_factor=2)
+        #x = self.res1(x)
+        #x = self.conv_mid(x)
         x = self.head(x)
         x = self.conv_last(x)
         x = x.view(-1,1,x.size(1),x.size(2))
