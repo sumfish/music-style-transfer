@@ -61,6 +61,7 @@ class Trainer(nn.Module):
 
     def gen_update(self, co_data, cl_data, hp, multigpus):
         self.gen_opt.zero_grad()
+        '''
         total, ad, xr, cr, sr, ac = self.model(co_data, cl_data, hp, 'gen_update')
         self.loss_gen_total = torch.mean(total)
         self.loss_gen_recon_x = torch.mean(xr)
@@ -68,10 +69,14 @@ class Trainer(nn.Module):
         self.loss_gen_recon_s = torch.mean(sr)
         self.loss_gen_adv = torch.mean(ad)
         self.accuracy_gen_adv = torch.mean(ac)
+        '''
+        xr = self.model(co_data, cl_data, hp, 'gen_update')
+        self.loss_gen_recon_x = torch.mean(xr)
         self.gen_opt.step()
         this_model = self.model.module if multigpus else self.model
         update_average(this_model.gen_test, this_model.gen)
-        return self.accuracy_gen_adv.item()
+        #return self.accuracy_gen_adv.item()
+        return self.loss_gen_recon_x.item()
 
     def dis_update(self, co_data, cl_data, hp):
         self.dis_opt.zero_grad()
