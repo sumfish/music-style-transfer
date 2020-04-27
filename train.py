@@ -65,7 +65,7 @@ test_content_loader = loaders[2]
 test_class_loader = loaders[3]
 
 # Setup logger and output folders
-model_name = os.path.splitext(os.path.basename(opts.config))[0]+'_required_grad'
+model_name = os.path.splitext(os.path.basename(opts.config))[0]+'_no_D_0423'
 print('model name:{}'.format(model_name))
 # 建立實體資料的存放
 train_writer = SummaryWriter(
@@ -83,12 +83,15 @@ while True:
     for it, (co_data, cl_data) in enumerate(
             zip(train_content_loader, train_class_loader)):  #####class=style
         with Timer("Elapsed time in update: %f"):
+            '''
             if(it%20==0):
                 d_acc = trainer.dis_update(co_data, cl_data, config)
-            g_acc = trainer.gen_update(co_data, cl_data, config,
+            '''
+            g_loss = trainer.gen_update(co_data, cl_data, config,
                                        opts.multigpus)
             torch.cuda.synchronize() #####g.d together
-            print('D acc: %.4f\t G acc: %.4f' % (d_acc, g_acc))
+            #print('D acc: %.4f\t G acc: %.4f' % (d_acc, g_acc))
+            print('G loss: %.4f' % (g_loss))
 
         ######################################## below unseen 
         if (iterations + 1) % config['log_iter'] == 0:
