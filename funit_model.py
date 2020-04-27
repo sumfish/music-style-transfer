@@ -33,6 +33,7 @@ class FUNITModel(nn.Module):
             s_xb = self.gen.enc_class_model(xb[:,:,:,:87])
             xt = self.gen.decode(c_xa, s_xb)  # translation
             xr = self.gen.decode(c_xa, s_xa)  # reconstruction
+            '''
             l_adv_t, gacc_t, xt_gan_feat = self.dis.calc_gen_loss(xt, lb)
             l_adv_r, gacc_r, xr_gan_feat = self.dis.calc_gen_loss(xr, la)
             _, xb_gan_feat = self.dis(xb, lb)
@@ -45,13 +46,18 @@ class FUNITModel(nn.Module):
             #r2=xr_gan_feat.mean(3)   #[B,1024(channel)]
             l_s_rec = recon_criterion(xt_gan_feat.mean(3).mean(2),
                                       xb_gan_feat.mean(3).mean(2))
+            '''
             l_x_rec = recon_criterion(xr, xa)
+            l_x_rec.backward()
+            '''
             l_adv = 0.5 * (l_adv_t + l_adv_r)
             acc = 0.5 * (gacc_t + gacc_r)
             l_total = (hp['gan_w'] * l_adv + hp['r_w'] * l_x_rec + hp[
                 'fm_w'] * (l_c_rec + l_s_rec))
             l_total.backward()
-            return l_total, l_adv, l_x_rec, l_c_rec, l_s_rec, acc
+            '''
+            #return l_total, l_adv, l_x_rec, l_c_rec, l_s_rec, acc
+            return l_x_rec
         elif mode == 'dis_update':
             xb.requires_grad_()
             l_real_pre, acc_r, resp_r = self.dis.calc_dis_real_loss(xb, lb)
@@ -130,6 +136,17 @@ class FUNITModel(nn.Module):
         self.eval()
         xa = content_image.cuda()
         s_xb_current = class_code.cuda()
-        c_xa_current = self.gen_test.enc_content(xa)
-        xt_current = self.gen_test.decode(c_xa_current, s_xb_current)
+        #c_xa_current = self.gen_test.enc_content(xa)
+        #xt_current = self.gen_test.decode(c_xa_current, s_xb_current)
+        c_xa_current = self.gen.enc_content(xa)
+        xt_current = self.gen.decode(c_xa_current, s_xb_current)
+        return xt_current
+
+    def translate_a_shot(self, content_spec, style_spec):
+        self.eval()
+        xa = content_spec.cuda()
+        xb = style_spec.cuda()
+        c_xa_current = self.gen.enc_content(xa)
+        s_xb_current = self.gen.enc_class_model(xb[:,:,:,:87])
+        xt_current = self.gen.decode(c_xa_current, s_xb_current)
         return xt_current
