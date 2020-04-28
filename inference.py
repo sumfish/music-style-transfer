@@ -41,12 +41,15 @@ class Inferencer(object):
         # load model
         self.load_model()
 
+        '''
+        ### normalize
         with open(self.args.attr, 'rb') as f:
             self.attr = pickle.load(f)
+        '''
 
     def load_model(self):
-        print(f'Load model from {self.args.model}')
-        last_model_name = self.get_model_list(self.args.model, "gen")
+        print('Load model from :{}'.format(self.config['model']))
+        last_model_name = self.get_model_list(self.config['model'], "gen")
         print(last_model_name)
         self.model.load_ckpt(last_model_name)
         self.model.eval()
@@ -136,101 +139,75 @@ class Inferencer(object):
         wav_data = melspectrogram2wav(dec)
         return wav_data, con
 
-    def denormalize(self, x):
-        m, s = self.attr['mean'], self.attr['std']
-        ret = x * s + m
-        return ret
-
-    def normalize(self, x):
-        m, s = self.attr['mean'], self.attr['std']
-        ret = (x - m) / s
-        return ret
-
     def write_wav_to_file(self, wav_data, output_path):
         write(output_path, rate=self.args.sample_rate, data=wav_data)
         return
 
-    def turn(self, x):
+    def turn_from_ori(self, x):
         dec=x
         wav_data = melspectrogram2wav(dec)
         return wav_data, dec
 
-    def write_images(self, ori_mel, trans_mel,outputpath):
-
+    def write_images(self, ori_mel, trans_mel, recon_mel, outputpath):
         librosa.display.specshow(trans_mel, hop_length=256)
         plt.colorbar()
         plt.savefig(os.path.join(outputpath,'trans.png'), dpi='figure', bbox_inches='tight')
-        #plt.colorbar(format='%+2.0f dB')
         plt.clf()
 
         librosa.display.specshow(ori_mel, hop_length=256)
         plt.colorbar()
         plt.savefig(os.path.join(outputpath,'source.png'), dpi='figure', bbox_inches='tight')
+        plt.clf()
+
+        librosa.display.specshow(recon_mel, hop_length=256)
         plt.colorbar()
+        plt.savefig(os.path.join(outputpath,'recons.png'), dpi='figure', bbox_inches='tight')
         plt.clf()
 
     def inference_from_path(self):
         #Loading sound file
-        src_audio, sr = librosa.load(self.args.source, sr=self.args.sample_rate)
-        tar_audio, sr = librosa.load(self.args.target, sr=self.args.sample_rate)
+        src_audio, sr = librosa.load(self.config['source'], sr=self.args.sample_rate)
+        tar_audio, sr = librosa.load(self.config['target'], sr=self.args.sample_rate)
 
         src_mel, _ = get_spectrograms(src_audio)
         tar_mel, _ = get_spectrograms(tar_audio)
         
         ######## 可以注意一下normalize維度
-        #src_mel = torch.from_numpy(self.normalize(src_mel)).cuda()
-        #tar_mel = torch.from_numpy(self.normalize(tar_mel)).cuda()
         src_mel = torch.from_numpy(src_mel).cuda()
         tar_mel = torch.from_numpy(tar_mel).cuda()
 
+        ####### style transfer
         conv_wav, conv_mel = self.translate_a_song(src_mel, tar_mel)
-
-        ####### output
+        ####### recons
+        recon_wav, recon_mel = self.translate_a_song(src_mel, src_mel)
+        
         #############################################################
-        outputpath=os.path.join(self.args.outpath,self.args.source_dir)
+        ###### outputpath
+        model_name=self.config['model'].split('/')[1]
+        s_name=self.config['source'].split('/')[-1][:-4]
+        t_name=self.config['target'].split('/')[-1][:-4]
+        dir_name=s_name+'to'+t_name
+        outputpath=os.path.join(self.config['outpath'],model_name,dir_name)
         mkdir(outputpath)
-        self.write_images(src_mel.detach().cpu().numpy().transpose((1,0)),conv_mel,outputpath)
-        self.write_wav_to_file(conv_wav, os.path.join(outputpath, self.args.output))
+
+        ###### outputdata
+        self.write_images(src_mel.detach().cpu().numpy().transpose((1,0)),conv_mel,recon_mel,outputpath)
+        self.write_wav_to_file(conv_wav, os.path.join(outputpath,'output.wav'))
+        self.write_wav_to_file(recon_wav, os.path.join(outputpath,'recons.wav'))
         
         ####### 測試直接從原本資料轉回來
-        conv_wav_ori, _ = self.turn(src_mel.detach().cpu().numpy())
-        self.write_wav_to_file(conv_wav_ori,os.path.join(outputpath,'ori.wav'))
+        conv_wav_oris, _ = self.turn_from_ori(src_mel.detach().cpu().numpy())
+        self.write_wav_to_file(conv_wav_oris,os.path.join(outputpath,'ori_sour.wav'))
+        conv_wav_orit, _ = self.turn_from_ori(tar_mel.detach().cpu().numpy())
+        self.write_wav_to_file(conv_wav_orit,os.path.join(outputpath,'ori_tar.wav'))
         return
 
 if __name__ == '__main__':
     parser = ArgumentParser()
-    parser.add_argument('-attr', '-a', 
-                        type=str,
-                        default='test_audio/attr.pkl',
-                        help='(normalize data)attr file path')  ####need renew
     parser.add_argument('-config', '-c', 
                         type=str,
                         default='configs/funit_music.yaml',
                         help='config file path')
-    parser.add_argument('-model', '-m', 
-                        type=str,
-                        default='outputs/funit_music_no_D_0423/checkpoints',
-                        help='model path')
-    parser.add_argument('-source', '-s', 
-                        type=str,
-                        default='test_audio/01_01.mp3',
-                        help='source wav path')
-    parser.add_argument('-target', '-t', 
-                        type=str,
-                        default='test_audio/00_00.mp3',
-                        help='target wav path')
-    parser.add_argument('-source_dir','-d',
-                        type=str,
-                        default='01_01_to_00_00',
-                        help='source wav name')
-    parser.add_argument('-outpath','-op',
-                        type=str,
-                        default='transfered_output',
-                        help='output wav path')
-    parser.add_argument('-output', '-o', 
-                        type=str,
-                        default='output.wav',
-                        help='output wav file')
     parser.add_argument('-sample_rate', '-sr', help='sample rate', default=22050, type=int)
     args = parser.parse_args()
     # load config file 
