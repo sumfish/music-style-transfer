@@ -8,7 +8,7 @@ snapshot_save_iter: 5000      # How often do you want to save trained models
 log_iter: 1                   # How often do you want to log the training stats
 
 # optimization options
-max_iter: 100000              # maximum number of training iterations
+max_iter: 200000              # maximum number of training iterations
 weight_decay: 0.0001          # weight decay
 lr_gen: 0.0001                # learning rate for the generator
 lr_dis: 0.0001                # learning rate for the discriminator
@@ -38,5 +38,13 @@ label_train: ./datasets/npy_txt/hung/2s_4class_128(no_normalize)/train
 data_test: ./datasets/npy_txt/hung/2s_4class_128(no_normalize)/test
 label_test: ./datasets/npy_txt/hung/2s_4class_128(no_normalize)/test
 
-style_pt: ./pre_ckpt/style/1s_128_ker53(hung_fc64)/style_best_275.pt
-content_pt: ./pre_ckpt/content/2s_4class_128(normalize)/content_024_en.pt
+# pre-train/fine-tune options
+style_pt: ./pre_ckpt/un_normalize_128/style/style_best_263.pt
+content_pt: ./pre_ckpt/un_normalize_128/content/content_019_en_best.pt
+fine_tune: True
+
+# inference options
+outpath: recons_output         # test output path
+source: test_audio/01_01.mp3   # source wave path
+target: test_audio/01_01.mp3   # target wave path
+model: outputs/funit_music_no_D_0423/checkpoints  # model ckpt
