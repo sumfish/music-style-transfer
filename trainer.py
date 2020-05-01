@@ -34,16 +34,19 @@ class Trainer(nn.Module):
         gen_params = list(self.model.gen.parameters())
         
         ########## load pre-train
-        style_en_pt=torch.load(cfg['style_pt'])
-        content_en_pt=torch.load(cfg['content_pt'])
-        self.model.gen.enc_class_model.load_state_dict(style_en_pt['model'])
-        self.model.gen.enc_content.load_state_dict(content_en_pt['encoder'])
-
-        ########## freeze encoder parameter
-        for p in self.model.gen.enc_content.parameters():
-            p.requires_grad= False
-        for p in self.model.gen.enc_class_model.parameters():
-            p.requires_grad= False
+        if cfg['pre_train']:
+            print('----------Load pre-train model!!!!----------')
+            style_en_pt=torch.load(cfg['style_pt'])
+            content_en_pt=torch.load(cfg['content_pt'])
+            self.model.gen.enc_class_model.load_state_dict(style_en_pt['model'])
+            self.model.gen.enc_content.load_state_dict(content_en_pt['encoder'])
+        
+            ########## freeze encoder parameter
+            print('----------Freeze the encoder parameter!!!!----------')
+            for p in self.model.gen.enc_content.parameters():
+                p.requires_grad= False
+            for p in self.model.gen.enc_class_model.parameters():
+                p.requires_grad= False
 
         #################### parameter
         self.dis_opt = torch.optim.RMSprop(
@@ -57,24 +60,32 @@ class Trainer(nn.Module):
         self.dis_scheduler = get_scheduler(self.dis_opt, cfg) 
         self.gen_scheduler = get_scheduler(self.gen_opt, cfg) 
         self.apply(weights_init(cfg['init'])) 
-        self.model.gen_test = copy.deepcopy(self.model.gen)
+ 
 
     def gen_update(self, co_data, cl_data, hp, multigpus):
         self.gen_opt.zero_grad()
-        '''
-        total, ad, xr, cr, sr, ac = self.model(co_data, cl_data, hp, 'gen_update')
-        self.loss_gen_total = torch.mean(total)
-        self.loss_gen_recon_x = torch.mean(xr)
-        self.loss_gen_recon_c = torch.mean(cr)
-        self.loss_gen_recon_s = torch.mean(sr)
-        self.loss_gen_adv = torch.mean(ad)
-        self.accuracy_gen_adv = torch.mean(ac)
-        '''
-        xr = self.model(co_data, cl_data, hp, 'gen_update')
-        self.loss_gen_recon_x = torch.mean(xr)
+        
+        if(hp['loss_mode']=='D'):
+            total, ad, xr, cr, sr, ac = self.model(co_data, cl_data, hp, 'gen_update')
+            self.loss_gen_total = torch.mean(total)
+            self.loss_gen_recon_x = torch.mean(xr)
+            self.loss_gen_recon_c = torch.mean(cr)
+            self.loss_gen_recon_s = torch.mean(sr)
+            self.loss_gen_adv = torch.mean(ad)
+            self.accuracy_gen_adv = torch.mean(ac)
+
+        if(hp['loss_mode']=='no_D_sc_recon'):
+            total, xr, cr, sr = self.model(co_data, cl_data, hp, 'gen_update')
+            self.loss_gen_total = torch.mean(total)
+            self.loss_gen_recon_x = torch.mean(xr)
+            self.loss_gen_recon_c = torch.mean(cr)
+            self.loss_gen_recon_s = torch.mean(sr)
+
+        if(hp['loss_mode']=='only_self_recon'):
+            xr = self.model(co_data, cl_data, hp, 'gen_update')
+            self.loss_gen_recon_x = torch.mean(xr)
+
         self.gen_opt.step()
-        this_model = self.model.module if multigpus else self.model
-        update_average(this_model.gen_test, this_model.gen)
         #return self.accuracy_gen_adv.item()
         return self.loss_gen_recon_x.item()
 
@@ -100,20 +111,21 @@ class Trainer(nn.Module):
         state_dict = torch.load(last_model_name)
         ###################
         ###################
-        #this_model.gen.load_state_dict(state_dict['gen'])
+        this_model.gen.load_state_dict(state_dict['gen'])
         ########## load dec only ///encoder was pre-loaded
-        this_model.gen.dec.load_state_dict(state_dict['gen.dec'])
-        this_model.gen_test.load_state_dict(state_dict['gen_test'])
+        #this_model.gen.dec.load_state_dict(state_dict['gen.dec'])
         iterations = int(last_model_name[-11:-3])
 
+        '''
         last_model_name = get_model_list(checkpoint_dir, "dis")
         state_dict = torch.load(last_model_name)
         this_model.dis.load_state_dict(state_dict['dis'])
-
+        
         state_dict = torch.load(os.path.join(checkpoint_dir, 'optimizer.pt'))
+        
         self.dis_opt.load_state_dict(state_dict['dis'])
         self.gen_opt.load_state_dict(state_dict['gen'])
-
+        '''
         self.dis_scheduler = get_scheduler(self.dis_opt, hp, iterations)
         self.gen_scheduler = get_scheduler(self.gen_opt, hp, iterations)
         print('Resume from iteration %d' % iterations)
@@ -123,23 +135,21 @@ class Trainer(nn.Module):
         this_model = self.model.module if multigpus else self.model
         # Save generators, discriminators, and optimizers
         gen_name = os.path.join(snapshot_dir, 'gen_%08d.pt' % (iterations + 1))
-        dis_name = os.path.join(snapshot_dir, 'dis_%08d.pt' % (iterations + 1))
+        #dis_name = os.path.join(snapshot_dir, 'dis_%08d.pt' % (iterations + 1))
         opt_name = os.path.join(snapshot_dir, 'optimizer.pt')
         #######################
         #### gen_dec --> only for decoder
         #### so you can load encoder/decoder seperately
         #######################
         torch.save({'gen': this_model.gen.state_dict(),
-                    'gen.dec':this_model.gen.dec.state_dict(),
-                    'gen_test': this_model.gen_test.state_dict()}, gen_name) 
-        torch.save({'dis': this_model.dis.state_dict()}, dis_name)
+                    'gen.dec':this_model.gen.dec.state_dict()}, gen_name) 
+        #torch.save({'dis': this_model.dis.state_dict()}, dis_name)
         torch.save({'gen': self.gen_opt.state_dict(),
                     'dis': self.dis_opt.state_dict()}, opt_name)
 
     def load_ckpt(self, ckpt_name):
         state_dict = torch.load(ckpt_name)
         self.model.gen.load_state_dict(state_dict['gen'])
-        self.model.gen_test.load_state_dict(state_dict['gen_test'])
 
     def translate(self, co_data, cl_data):
         return self.model.translate(co_data, cl_data)

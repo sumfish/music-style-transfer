@@ -3,7 +3,7 @@
 # (https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode).
 
 # logger options
-image_save_iter: 1500         # How often do you want to save output images during training
+image_save_iter: 10       # How often do you want to save output images during training
 snapshot_save_iter: 5000      # How often do you want to save trained models
 log_iter: 1                   # How often do you want to log the training stats
 
@@ -17,9 +17,13 @@ gan_w: 1                      # weight of adversarial loss for image translation
 fm_w: 1                       # weight on distance between gan features of style and translated image
 r_w: 0.1                      # weight of image reconstruction loss
 
+############################################
+# loss options 
+loss_mode : only_self_recon  # no_D_sc_recon: method2 -> x_a rescon, c_x_ab&c_a recons, s_x_ab&s_b recons
+
 # model options
 gen:
-  mel_d : 128                 # dimension of input for content model(n_mel)
+  mel_d : 512                 # dimension of input for content model(n_mel)
   kernel : 5                  # conv1d kernel size
   num_classes: 4              # dimension of the class for the class model(training set)
   latent_dim : 64            # style code
@@ -33,18 +37,28 @@ dis:
 # data options
 num_workers: 0      ##################
 batch_size: 6
-data_train: ./datasets/npy_txt/hung/2s_4class_128(no_normalize)/train
-label_train: ./datasets/npy_txt/hung/2s_4class_128(no_normalize)/train
-data_test: ./datasets/npy_txt/hung/2s_4class_128(no_normalize)/test
-label_test: ./datasets/npy_txt/hung/2s_4class_128(no_normalize)/test
+fix_length : True       # random select 128 frames from 2s audio matrix
+data_train: ./datasets/npy_txt/hung/2s_4class_512_no_normalize/train
+label_train: ./datasets/npy_txt/hung/2s_4class_512_no_normalize/train
+data_test: ./datasets/npy_txt/hung/2s_4class_512_no_normalize/test
+label_test: ./datasets/npy_txt/hung/2s_4class_512_no_normalize/test
 
 # pre-train/fine-tune options
-style_pt: ./pre_ckpt/un_normalize_128/style/style_best_263.pt
-content_pt: ./pre_ckpt/un_normalize_128/content/content_019_en_best.pt
-fine_tune: True
+#### 128
+#style_pt: ./pre_ckpt/un_normalize_128/style/style_best_263.pt
+#content_pt: ./pre_ckpt/un_normalize_128/content/content_019_en_best.pt
+#pre_train: False
+
+#### 512
+style_pt: ./pre_ckpt/un_normalize_512(T=128)/style/style_best_283.pt
+content_pt: ./pre_ckpt/un_normalize_512(T=128)/content/content_044_en_best.pt
+pre_train: False
 
 # inference options
 outpath: recons_output         # test output path
-source: test_audio/01_01.mp3   # source wave path
-target: test_audio/01_01.mp3   # target wave path
-model: outputs/funit_music_no_D_0423/checkpoints  # model ckpt
+source: test_audio/test/10_01.mp3   # source wave path
+target: test_audio/test/10_01.mp3   # target wave path
+model: outputs/funit_music_no_D_0430(512)_T=128_fine_tune/checkpoints  # model ckpt
+content_size: 128
+style_size: 87
+
