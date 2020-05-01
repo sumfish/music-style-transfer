@@ -16,7 +16,13 @@ import torchvision.utils as vutils
 
 from data import AudioDataset
 
-
+def mkdir(directory):
+    if not os.path.exists(directory):
+        print('making dir:{0}'.format(directory))
+        os.makedirs(directory)
+    else:
+        print('already exist: {0}'.format(directory))
+        
 def update_average(model_tgt, model_src, beta=0.999):
     with torch.no_grad():
         param_dict_src = dict(model_src.named_parameters())
@@ -29,6 +35,7 @@ def update_average(model_tgt, model_src, beta=0.999):
 def loader_from_list(
         root,
         label,
+        fix_length,
         batch_size,
         num_workers=4,
         shuffle=True,
@@ -38,6 +45,7 @@ def loader_from_list(
     transform = transforms.Compose(transform_list)
     dataset = AudioDataset(root,
                             label,
+                            fix_length,
                             transform)
     loader = DataLoader(dataset,
                         batch_size,
@@ -50,10 +58,12 @@ def loader_from_list(
 def get_evaluation_loaders(conf, shuffle_content=False):
     batch_size = conf['batch_size']
     num_workers = conf['num_workers']
+    fix_length = conf['fix_length']
 
     content_loader = loader_from_list(
             root=conf['data_train'],
             label=conf['label_train'],
+            fix_length=fix_length,
             batch_size=batch_size,
             num_workers=num_workers,
             shuffle=shuffle_content,
@@ -63,6 +73,7 @@ def get_evaluation_loaders(conf, shuffle_content=False):
     class_loader = loader_from_list(
             root=conf['data_test'],
             label=conf['label_test'],
+            fix_length=fix_length,
             batch_size=batch_size * conf['k_shot'],
             num_workers=1,
             shuffle=False,
@@ -74,24 +85,30 @@ def get_evaluation_loaders(conf, shuffle_content=False):
 def get_train_loaders(conf):
     batch_size = conf['batch_size']
     num_workers = conf['num_workers'] ############
+    fix_length = conf['fix_length']
+
     train_content_loader = loader_from_list(
             root=conf['data_train'],
             label=conf['label_train'],
+            fix_length=fix_length,
             batch_size=batch_size,
             num_workers=num_workers)
     train_class_loader = loader_from_list(
             root=conf['data_train'],
             label=conf['label_train'],
+            fix_length=fix_length,
             batch_size=batch_size,
             num_workers=num_workers)
     test_content_loader = loader_from_list(
             root=conf['data_test'],
             label=conf['label_test'],
+            fix_length=fix_length,
             batch_size=batch_size,
             num_workers=0)
     test_class_loader = loader_from_list(
             root=conf['data_test'],
             label=conf['label_test'],
+            fix_length=fix_length,
             batch_size=batch_size,
             num_workers=0)
 
@@ -117,20 +134,17 @@ def make_result_folders(output_directory):
 
 
 def __write_images(im_outs, dis_img_n, file_name):
-    im_outs = [images.view(-1, 128, 173) for images in im_outs]
+    im_outs = [images.view(-1, 128, 128) for images in im_outs]
     image_tensor = torch.cat([images[:dis_img_n] for images in im_outs], 0)
-    ####spec   4.6 Batchsize
-    #plt.figure(1,figsize=(4*4,6*4))
-    plt.figure(1,figsize=(6*4,6*4))
-    for i in range(6):
+    ####spec   
+    plt.figure(1,figsize=(6*4,4*4))
+    for i in range(4):
         for j in range(6):#4
             index= (i*6)+j+1
-            plt.subplot(6, 6, index)
-            '''
-            index= (i*4)+j+1
-            plt.subplot(6, 4, index)
-            '''
+            plt.subplot(4, 6, index)
+            
             librosa.display.specshow(image_tensor[index-1].cpu().numpy(), hop_length=256)
+            plt.set_cmap("magma")
     plt.savefig(file_name, dpi='figure', bbox_inches='tight')
     plt.clf()
     '''
