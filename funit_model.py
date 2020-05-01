@@ -20,7 +20,6 @@ class FUNITModel(nn.Module):
         super(FUNITModel, self).__init__()
         self.gen = FewShotGen(hp['gen'])
         self.dis = GPPatchMcResDis(hp['dis'])
-        self.gen_test = copy.deepcopy(self.gen)
 
     def forward(self, co_data, cl_data, hp, mode):
         xa = co_data[0].cuda()
@@ -30,34 +29,67 @@ class FUNITModel(nn.Module):
         if mode == 'gen_update':
             c_xa = self.gen.enc_content(xa)
             s_xa = self.gen.enc_class_model(xa[:,:,:,:87])
-            s_xb = self.gen.enc_class_model(xb[:,:,:,:87])
+            s_xb = self.gen.enc_class_model(xb[:,:,:,:87])  #[B,64]
             xt = self.gen.decode(c_xa, s_xb)  # translation
             xr = self.gen.decode(c_xa, s_xa)  # reconstruction
-            '''
-            l_adv_t, gacc_t, xt_gan_feat = self.dis.calc_gen_loss(xt, lb)
-            l_adv_r, gacc_r, xr_gan_feat = self.dis.calc_gen_loss(xr, la)
-            _, xb_gan_feat = self.dis(xb, lb)
-            _, xa_gan_feat = self.dis(xa, la)
-            #####################################################
-            #####################################################
-            l_c_rec = recon_criterion(xr_gan_feat.mean(3).mean(2),
-                                      xa_gan_feat.mean(3).mean(2))
-            #r1=xr_gan_feat.mean(3).mean(2)
-            #r2=xr_gan_feat.mean(3)   #[B,1024(channel)]
-            l_s_rec = recon_criterion(xt_gan_feat.mean(3).mean(2),
-                                      xb_gan_feat.mean(3).mean(2))
-            '''
-            l_x_rec = recon_criterion(xr, xa)
-            l_x_rec.backward()
-            '''
-            l_adv = 0.5 * (l_adv_t + l_adv_r)
-            acc = 0.5 * (gacc_t + gacc_r)
-            l_total = (hp['gan_w'] * l_adv + hp['r_w'] * l_x_rec + hp[
-                'fm_w'] * (l_c_rec + l_s_rec))
-            l_total.backward()
-            '''
-            #return l_total, l_adv, l_x_rec, l_c_rec, l_s_rec, acc
-            return l_x_rec
+
+            
+            if(hp['loss_mode']=='D'):
+                # gan loss
+                l_adv_t, gacc_t, xt_gan_feat = self.dis.calc_gen_loss(xt, lb)
+                l_adv_r, gacc_r, xr_gan_feat = self.dis.calc_gen_loss(xr, la)
+                
+                # feature matching loss
+                _, xb_gan_feat = self.dis(xb, lb)
+                _, xa_gan_feat = self.dis(xa, la)
+                l_c_rec = recon_criterion(xr_gan_feat.mean(3).mean(2),
+                                        xa_gan_feat.mean(3).mean(2))
+                #r1=xr_gan_feat.mean(3).mean(2)
+                #r2=xr_gan_feat.mean(3)   #[B,1024(channel)]
+                l_s_rec = recon_criterion(xt_gan_feat.mean(3).mean(2),
+                                        xb_gan_feat.mean(3).mean(2))
+                
+                # x_a recons
+                l_x_rec = recon_criterion(xr, xa)
+
+                l_adv = 0.5 * (l_adv_t + l_adv_r)
+                acc = 0.5 * (gacc_t + gacc_r)
+                l_total = (hp['gan_w'] * l_adv + hp['r_w'] * l_x_rec + hp[
+                    'fm_w'] * (l_c_rec + l_s_rec))
+                l_total.backward()
+
+                return l_total, l_adv, l_x_rec, l_c_rec, l_s_rec, acc
+            
+            if(hp['loss_mode']=='no_D_sc_recon'):
+                # c_a recons
+                c_xt = self.gen.enc_content(xt)
+                l_ca_rec = recon_criterion(c_xt,c_xa)
+
+                # s_b recons
+                s_xt = self.gen.enc_class_model(xt)
+                l_sb_rec = recon_criterion(s_xt,s_xb) 
+
+                # x_a recons
+                l_x_rec = recon_criterion(xr, xa)
+                
+                ## weight setting from x_rec=1 c_rec=1
+                # https://github.com/auspicious3000/autovc
+                l_total = hp['r_w'] * l_x_rec + hp['r_w']* (l_ca_rec+l_sb_rec) 
+                l_total.backward()
+
+                return l_total, l_x_rec, l_ca_rec, l_sb_rec
+
+            if(hp['loss_mode']=='no_D_xt_xa_recon'):
+                # x_a recons
+                l_x_rec = recon_criterion(xr, xa)
+
+            if(hp['loss_mode']=='only_self_recon'):
+                # x_a recons
+                l_x_rec = recon_criterion(xr, xa)
+                l_x_rec.backward()
+                
+                return l_x_rec
+
         elif mode == 'dis_update':
             xb.requires_grad_()
             l_real_pre, acc_r, resp_r = self.dis.calc_dis_real_loss(xb, lb)
@@ -87,7 +119,6 @@ class FUNITModel(nn.Module):
     def test(self, co_data, cl_data):
         self.eval()
         self.gen.eval()
-        self.gen_test.eval()
         xa = co_data[0].cuda()
         xb = cl_data[0].cuda()
         c_xa_current = self.gen.enc_content(xa)
@@ -95,38 +126,33 @@ class FUNITModel(nn.Module):
         s_xb_current = self.gen.enc_class_model(xb[:,:,:,:87])
         xt_current = self.gen.decode(c_xa_current, s_xb_current)
         xr_current = self.gen.decode(c_xa_current, s_xa_current)
-        c_xa = self.gen_test.enc_content(xa)
-        s_xa = self.gen_test.enc_class_model(xa[:,:,:,:87])
-        s_xb = self.gen_test.enc_class_model(xb[:,:,:,:87])
-        xt = self.gen_test.decode(c_xa, s_xb)
-        xr = self.gen_test.decode(c_xa, s_xa)
         self.train()
-        return xa, xr_current, xt_current, xb, xr, xt
+        return xa, xr_current, xt_current, xb
 
     def translate_k_shot(self, co_data, cl_data, k):
         self.eval()
         xa = co_data[0].cuda()
         xb = cl_data[0].cuda()
-        c_xa_current = self.gen_test.enc_content(xa)
+        c_xa_current = self.gen.enc_content(xa)
         if k == 1:
-            c_xa_current = self.gen_test.enc_content(xa)
-            s_xb_current = self.gen_test.enc_class_model(xb[:,:,:,:87])########################
-            xt_current = self.gen_test.decode(c_xa_current, s_xb_current)
+            c_xa_current = self.gen.enc_content(xa)
+            s_xb_current = self.gen.enc_class_model(xb[:,:,:,:87])########################
+            xt_current = self.gen.decode(c_xa_current, s_xb_current)
         else:
-            s_xb_current_before = self.gen_test.enc_class_model(xb[:,:,:,:87])##########################
+            s_xb_current_before = self.gen.enc_class_model(xb[:,:,:,:87])##########################
             s_xb_current_after = s_xb_current_before.squeeze(-1).permute(1,
                                                                          2,
                                                                          0)
             s_xb_current_pool = torch.nn.functional.avg_pool1d(
                 s_xb_current_after, k)
             s_xb_current = s_xb_current_pool.permute(2, 0, 1).unsqueeze(-1)
-            xt_current = self.gen_test.decode(c_xa_current, s_xb_current)
+            xt_current = self.gen.decode(c_xa_current, s_xb_current)
         return xt_current
 
     def compute_k_style(self, style_batch, k):
         self.eval()
         style_batch = style_batch.cuda()
-        s_xb_before = self.gen_test.enc_class_model(style_batch[:,:,:,:87])########################
+        s_xb_before = self.gen.enc_class_model(style_batch[:,:,:,:87])########################
         s_xb_after = s_xb_before.squeeze(-1).permute(1, 2, 0)
         s_xb_pool = torch.nn.functional.avg_pool1d(s_xb_after, k)
         s_xb = s_xb_pool.permute(2, 0, 1).unsqueeze(-1)
@@ -136,8 +162,6 @@ class FUNITModel(nn.Module):
         self.eval()
         xa = content_image.cuda()
         s_xb_current = class_code.cuda()
-        #c_xa_current = self.gen_test.enc_content(xa)
-        #xt_current = self.gen_test.decode(c_xa_current, s_xb_current)
         c_xa_current = self.gen.enc_content(xa)
         xt_current = self.gen.decode(c_xa_current, s_xb_current)
         return xt_current
