@@ -361,7 +361,7 @@ class Decoder(nn.Module):
         self.stride=[1]
         self.conv_first = nn.Conv1d(self.c_in, self.c_m, kernel_size=1) 
         #self.conv_mid = nn.Conv1d(self.c_m, self.c_m, kernel_size=2) 
-        self.conv_last = nn.Conv1d(self.c_m, self.c_out, kernel_size=4) 
+        self.conv_last = nn.Conv1d(self.c_m, self.c_out, kernel_size=1) 
         self.res1=res_block_up(self.c_m, self.c_m, self.kernel, self.stride)
         
         self.head = nn.Sequential(
