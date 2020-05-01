@@ -96,8 +96,8 @@ class Inferencer(object):
     def translate_a_song(self, x, x_cond):
         content_spec = self.utt_make_frames(x)
         style_spec = self.utt_make_frames(x_cond)
-        content_split=torch.split(content_spec,173,dim=2)
-        style_split=torch.split(style_spec,87,dim=2)
+        content_split=torch.split(content_spec,self.config['content_size'],dim=2)
+        style_split=torch.split(style_spec,self.config['style_size'],dim=2)
 
         #content
         c_data=[]
@@ -133,7 +133,6 @@ class Inferencer(object):
                     flag=True
                 else:
                     con = np.concatenate((con,dec),axis=1)
-        #dec = self.denormalize(dec)
         ### transpose
         dec=con.transpose((1,0))
         wav_data = melspectrogram2wav(dec)
@@ -149,18 +148,25 @@ class Inferencer(object):
         return wav_data, dec
 
     def write_images(self, ori_mel, trans_mel, recon_mel, outputpath):
-        librosa.display.specshow(trans_mel, hop_length=256)
+        
+        librosa.display.specshow(trans_mel, hop_length=256)  #y_axis='mel'
+        #plt.colorbar(format='%+2.0f dB')
         plt.colorbar()
+        plt.set_cmap("magma")
         plt.savefig(os.path.join(outputpath,'trans.png'), dpi='figure', bbox_inches='tight')
         plt.clf()
 
         librosa.display.specshow(ori_mel, hop_length=256)
         plt.colorbar()
+        plt.set_cmap("magma")
+        #plt.set_cmap("coolwarm")
         plt.savefig(os.path.join(outputpath,'source.png'), dpi='figure', bbox_inches='tight')
         plt.clf()
 
         librosa.display.specshow(recon_mel, hop_length=256)
         plt.colorbar()
+        plt.set_cmap("magma")
+        #plt.set_cmap("gnuplot")
         plt.savefig(os.path.join(outputpath,'recons.png'), dpi='figure', bbox_inches='tight')
         plt.clf()
 
