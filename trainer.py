@@ -50,31 +50,26 @@ class Trainer(nn.Module):
             for p in self.model.gen.enc_class_model.parameters():
                 p.requires_grad= False
 
-        #################### parameter
-        base_params = filter(lambda p : id(p) not in style_en_params+cont_en_params, self.model.gen.parameters())
-        #print(list(base_params))
+            self.gen_opt = torch.optim.RMSprop(
+                [p for p in gen_params if p.requires_grad],
+                lr=lr_dis, weight_decay=cfg['weight_decay'])
         
-        self.dis_opt = torch.optim.RMSprop(
-            [p for p in dis_params if p.requires_grad],
-            lr=lr_gen, weight_decay=cfg['weight_decay'])
-        
-        '''
-        params_list=[
-            {"params": base_params, 'lr'=lr_gen},
-            {'params': self.model.gen.enc_content.parameters(),'lr'=(lr_gen/10)},
-            {'params': self.model.gen.enc_class_model.parameters(),'lr'=(lr_gen/10)}
-            ]
-        '''
-        self.gen_opt = torch.optim.RMSprop([
+        else:
+            #################### parameter
+            base_params = filter(lambda p : id(p) not in style_en_params+cont_en_params, self.model.gen.parameters())
+            #print(list(base_params))
+
+            self.gen_opt = torch.optim.RMSprop([
             {'params': base_params},
             {'params': self.model.gen.enc_content.parameters(),'lr':(lr_gen/10)},
             {'params': self.model.gen.enc_class_model.parameters(),'lr':(lr_gen/10)}],
             lr=lr_gen, weight_decay=cfg['weight_decay'])
-        '''
-        self.gen_opt = torch.optim.RMSprop(
-            [p for p in gen_params if p.requires_grad],
-            lr=lr_dis, weight_decay=cfg['weight_decay'])
-        '''
+        
+        self.dis_opt = torch.optim.RMSprop(
+            [p for p in dis_params if p.requires_grad],
+            lr=lr_gen, weight_decay=cfg['weight_decay'])
+    
+        
         ##################### not understand
         self.dis_scheduler = get_scheduler(self.dis_opt, cfg) 
         self.gen_scheduler = get_scheduler(self.gen_opt, cfg) 
