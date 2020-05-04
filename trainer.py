@@ -32,7 +32,9 @@ class Trainer(nn.Module):
         lr_dis = cfg['lr_dis']
         dis_params = list(self.model.dis.parameters())
         gen_params = list(self.model.gen.parameters())
-        
+        style_en_params = list(map(id, self.model.gen.enc_class_model.parameters()))
+        cont_en_params = list(map(id, self.model.gen.enc_content.parameters()))
+
         ########## load pre-train
         if cfg['pre_train']:
             print('----------Load pre-train model!!!!----------')
@@ -49,20 +51,37 @@ class Trainer(nn.Module):
                 p.requires_grad= False
 
         #################### parameter
+        base_params = filter(lambda p : id(p) not in style_en_params+cont_en_params, self.model.gen.parameters())
+        #print(list(base_params))
+        
         self.dis_opt = torch.optim.RMSprop(
             [p for p in dis_params if p.requires_grad],
             lr=lr_gen, weight_decay=cfg['weight_decay'])
+        
+        '''
+        params_list=[
+            {"params": base_params, 'lr'=lr_gen},
+            {'params': self.model.gen.enc_content.parameters(),'lr'=(lr_gen/10)},
+            {'params': self.model.gen.enc_class_model.parameters(),'lr'=(lr_gen/10)}
+            ]
+        '''
+        self.gen_opt = torch.optim.RMSprop([
+            {'params': base_params},
+            {'params': self.model.gen.enc_content.parameters(),'lr':(lr_gen/10)},
+            {'params': self.model.gen.enc_class_model.parameters(),'lr':(lr_gen/10)}],
+            lr=lr_gen, weight_decay=cfg['weight_decay'])
+        '''
         self.gen_opt = torch.optim.RMSprop(
             [p for p in gen_params if p.requires_grad],
             lr=lr_dis, weight_decay=cfg['weight_decay'])
-        
+        '''
         ##################### not understand
         self.dis_scheduler = get_scheduler(self.dis_opt, cfg) 
         self.gen_scheduler = get_scheduler(self.gen_opt, cfg) 
         self.apply(weights_init(cfg['init'])) 
  
 
-    def gen_update(self, co_data, cl_data, hp, multigpus):
+    def gen_update(self, co_data, cl_data, hp, multigpus, trans=None):
         self.gen_opt.zero_grad()
         
         if(hp['loss_mode']=='D'):
@@ -74,14 +93,20 @@ class Trainer(nn.Module):
             self.loss_gen_adv = torch.mean(ad)
             self.accuracy_gen_adv = torch.mean(ac)
 
-        if(hp['loss_mode']=='no_D_sc_recon'):
+        elif(hp['loss_mode']=='no_D_sc_recon'):
             total, xr, cr, sr = self.model(co_data, cl_data, hp, 'gen_update')
             self.loss_gen_total = torch.mean(total)
             self.loss_gen_recon_x = torch.mean(xr)
             self.loss_gen_recon_c = torch.mean(cr)
             self.loss_gen_recon_s = torch.mean(sr)
 
-        if(hp['loss_mode']=='only_self_recon'):
+        elif(hp['loss_mode']=='no_D_xt_xa_recon'):
+            total, xr, xtr = self.model(co_data, cl_data, hp, 'gen_update', trans)
+            self.loss_gen_total = torch.mean(total)
+            self.loss_gen_recon_x = torch.mean(xr)
+            self.loss_gen_recon_trans = torch.mean(xtr)
+
+        elif(hp['loss_mode']=='only_self_recon'):
             xr = self.model(co_data, cl_data, hp, 'gen_update')
             self.loss_gen_recon_x = torch.mean(xr)
 
@@ -100,9 +125,9 @@ class Trainer(nn.Module):
         self.dis_opt.step()
         return self.accuracy_dis_adv.item()
 
-    def test(self, co_data, cl_data, multigpus):
+    def test(self, co_data, cl_data, multigpus, config):
         this_model = self.model.module if multigpus else self.model
-        return this_model.test(co_data, cl_data)
+        return this_model.test(co_data, cl_data, config)
 
     def resume(self, checkpoint_dir, hp, multigpus):
         this_model = self.model.module if multigpus else self.model
