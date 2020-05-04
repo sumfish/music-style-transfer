@@ -21,11 +21,18 @@ class FUNITModel(nn.Module):
         self.gen = FewShotGen(hp['gen'])
         self.dis = GPPatchMcResDis(hp['dis'])
 
-    def forward(self, co_data, cl_data, hp, mode):
-        xa = co_data[0].cuda()
-        la = co_data[1].cuda() #class label
-        xb = cl_data[0].cuda()
-        lb = cl_data[1].cuda() #class label
+    def forward(self, co_data, cl_data, hp, mode, trans=None):
+        if(hp['loss_mode']=='no_D_xt_xa_recon'):
+            xa = co_data.cuda()
+            xb = cl_data.cuda()
+            trans = trans.cuda()
+        else:
+            xa = co_data[0].cuda()
+            la = co_data[1].cuda() #class label
+            xb = cl_data[0].cuda()
+            lb = cl_data[1].cuda() #class label
+
+
         if mode == 'gen_update':
             c_xa = self.gen.enc_content(xa)
             s_xa = self.gen.enc_class_model(xa[:,:,:,:87])
@@ -60,7 +67,7 @@ class FUNITModel(nn.Module):
 
                 return l_total, l_adv, l_x_rec, l_c_rec, l_s_rec, acc
             
-            if(hp['loss_mode']=='no_D_sc_recon'):
+            elif(hp['loss_mode']=='no_D_sc_recon'):
                 # c_a recons
                 c_xt = self.gen.enc_content(xt)
                 l_ca_rec = recon_criterion(c_xt,c_xa)
@@ -74,16 +81,22 @@ class FUNITModel(nn.Module):
                 
                 ## weight setting from x_rec=1 c_rec=1
                 # https://github.com/auspicious3000/autovc
-                l_total = hp['r_w'] * l_x_rec + hp['r_w']* (l_ca_rec+l_sb_rec) 
+                l_total = hp['r_w'] * l_x_rec + hp['r_w']* (l_ca_rec+l_sb_rec)*0.5 
                 l_total.backward()
 
                 return l_total, l_x_rec, l_ca_rec, l_sb_rec
 
-            if(hp['loss_mode']=='no_D_xt_xa_recon'):
+            elif(hp['loss_mode']=='no_D_xt_xa_recon'):
                 # x_a recons
                 l_x_rec = recon_criterion(xr, xa)
+                l_xtr_rec = recon_criterion(xt, trans)
 
-            if(hp['loss_mode']=='only_self_recon'):
+                l_total= l_x_rec+l_xtr_rec
+                l_total.backward()
+
+                return l_total, l_x_rec, l_xtr_rec
+
+            elif(hp['loss_mode']=='only_self_recon'):
                 # x_a recons
                 l_x_rec = recon_criterion(xr, xa)
                 l_x_rec.backward()
@@ -116,11 +129,15 @@ class FUNITModel(nn.Module):
         else:
             assert 0, 'Not support operation'
 
-    def test(self, co_data, cl_data):
+    def test(self, co_data, cl_data, config):
         self.eval()
         self.gen.eval()
-        xa = co_data[0].cuda()
-        xb = cl_data[0].cuda()
+        if (config['loss_mode']=='no_D_xt_xa_recon'):
+            xa = co_data.cuda()
+            xb = cl_data.cuda()
+        else:
+            xa = co_data[0].cuda()
+            xb = cl_data[0].cuda()
         c_xa_current = self.gen.enc_content(xa)
         s_xa_current = self.gen.enc_class_model(xa[:,:,:,:87])
         s_xb_current = self.gen.enc_class_model(xb[:,:,:,:87])
