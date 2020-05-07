@@ -3,12 +3,12 @@
 # (https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode).
 
 # logger options
-image_save_iter: 1500       # How often do you want to save output images during training
+image_save_iter: 6000       # How often do you want to save output images during training
 snapshot_save_iter: 5000      # How often do you want to save trained models
 log_iter: 1                   # How often do you want to log the training stats
 
 # optimization options
-max_iter: 100000             # maximum number of training iterations
+max_iter: 120000             # maximum number of training iterations
 weight_decay: 0.0001          # weight decay
 lr_gen: 0.0001                # learning rate for the generator
 lr_dis: 0.0001                # learning rate for the discriminator
@@ -25,9 +25,9 @@ r_w: 1                      # weight of image reconstruction loss
 # no_D_AUTOVC            -> (Method4) paper(AUTOVC)
 # only_self_recon        -> (Method5) only x_a rescon
       
-
-loss_mode : no_D_xt_xa_recon 
-#loss_mode : no_D_sc_recon 
+#loss_mode : no_D_AUTOVC 
+#loss_mode : no_D_xt_xa_recon 
+loss_mode : no_D_sc_recon 
 
 # model options
 gen:
@@ -58,15 +58,16 @@ label_test: ./datasets/npy_txt/hung/2s_4class_512_no_normalize_no4/test
 #pre_train: False
 
 #### 512
-style_pt: ./pre_ckpt/un_normalize_512(T=128)/style/style_best_283.pt
-content_pt: ./pre_ckpt/un_normalize_512(T=128)/content/content_044_en_best.pt
+style_pt: ./pre_ckpt/un_normalize_512_T=128/style/style_best_283.pt
+content_pt: ./pre_ckpt/un_normalize_512_T=128/content/content_044_en_best.pt
 pre_train: True
+fixed_s: True    # not style loss
 
 # inference options
 outpath: recons_output         # test output path
-source: test_audio/03_00.mp3   # source wave path
-target: test_audio/03_00.mp3   # target wave path
-model: outputs/funit_music_no_D_0503_xsc_recon_fine_tune_lr_wei_adjust/checkpoints  # model ckpt
+source: test_audio/01_01.mp3   # source wave path
+target: test_audio/test/09_02.mp3   # target wave path
+model: outputs/funit_music_no_D_0505_AutoVC_fine_tune_fixed_s/checkpoints  # model ckpt
 content_size: 128
 style_size: 87
 
