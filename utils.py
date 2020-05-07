@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader
 from torchvision import transforms
 import torchvision.utils as vutils
 
-from data import AudioDataset, AudioParallelDataset
+from data import AudioDataset, AudioParallelDataset, AudioAutoVCDataset
 
 def mkdir(directory):
     if not os.path.exists(directory):
@@ -22,14 +22,6 @@ def mkdir(directory):
         os.makedirs(directory)
     else:
         print('already exist: {0}'.format(directory))
-        
-def update_average(model_tgt, model_src, beta=0.999):
-    with torch.no_grad():
-        param_dict_src = dict(model_src.named_parameters())
-        for p_name, p_tgt in model_tgt.named_parameters():
-            p_src = param_dict_src[p_name]
-            assert(p_src is not p_tgt)
-            p_tgt.copy_(beta*p_tgt + (1. - beta)*p_src)
 
 
 def loader_from_list(
@@ -49,6 +41,11 @@ def loader_from_list(
                                 label,
                                 fix_length,
                                 transform)        
+    elif mode == 'no_D_AUTOVC':
+        dataset = AudioAutoVCDataset(root,
+                                label,
+                                fix_length,
+                                transform)  
     else:
         dataset = AudioDataset(root,
                                 label,
@@ -88,7 +85,7 @@ def get_evaluation_loaders(conf, shuffle_content=False):
             drop_last=False)
     return content_loader, class_loader
 
-def get_parallel_loaders(conf):
+def get_special_loaders(conf):
     batch_size = conf['batch_size']
     num_workers = conf['num_workers'] ############
     fix_length = conf['fix_length']

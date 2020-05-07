@@ -26,6 +26,9 @@ class FUNITModel(nn.Module):
             xa = co_data.cuda()
             xb = cl_data.cuda()
             trans = trans.cuda()
+        elif(hp['loss_mode']=='no_D_AUTOVC'):
+            xa = co_data.cuda()
+            ### target in style method below
         else:
             xa = co_data[0].cuda()
             la = co_data[1].cuda() #class label
@@ -34,11 +37,27 @@ class FUNITModel(nn.Module):
 
 
         if mode == 'gen_update':
+            # content method
             c_xa = self.gen.enc_content(xa)
-            s_xa = self.gen.enc_class_model(xa[:,:,:,:87])
-            s_xb = self.gen.enc_class_model(xb[:,:,:,:87])  #[B,64]
+
+            # style method
+            if(hp['loss_mode']=='no_D_AUTOVC'):
+                for count in range(len(cl_data)):
+                    scode=cl_data[count][:,:,:,:87].cuda()
+                    temp=self.gen.enc_class_model(scode)
+                    if count==0:
+                        class_code=temp
+                    else:
+                        class_code+=temp
+                s_xb=class_code/(len(cl_data))
+            else:
+                s_xa = self.gen.enc_class_model(xa[:,:,:,:87])
+                s_xb = self.gen.enc_class_model(xb[:,:,:,:87])  #[B,64]
+
+            if(hp['loss_mode']!='no_D_AUTOVC'):
+                xr = self.gen.decode(c_xa, s_xa)  # reconstruction
+            ### every mode needs
             xt = self.gen.decode(c_xa, s_xb)  # translation
-            xr = self.gen.decode(c_xa, s_xa)  # reconstruction
 
             
             if(hp['loss_mode']=='D'):
@@ -96,6 +115,29 @@ class FUNITModel(nn.Module):
 
                 return l_total, l_x_rec, l_xtr_rec
 
+            elif(hp['loss_mode']=='no_D_AUTOVC'):
+                # x_a recons
+                l_x_rec = recon_criterion(xt, xa)  #trans is recons
+                
+                # c_a recons
+                c_xt = self.gen.enc_content(xt)
+                l_c_rec = recon_criterion(c_xa, c_xt)
+
+                if (hp['fixed_s']==True):
+                    l_total= l_x_rec+l_c_rec
+                    l_total.backward()
+
+                    return l_total, l_x_rec, l_c_rec, 0
+                else:
+                    # c_a recons
+                    s_xt = self.gen.enc_class_model(xt)
+                    l_s_rec = recon_criterion(s_xb, s_xt)
+
+                    l_total= l_x_rec+ 0.5*(l_c_rec+l_s_rec)
+                    l_total.backward()
+                    
+                    return l_total, l_x_rec, l_c_rec, l_s_rec
+
             elif(hp['loss_mode']=='only_self_recon'):
                 # x_a recons
                 l_x_rec = recon_criterion(xr, xa)
@@ -135,14 +177,32 @@ class FUNITModel(nn.Module):
         if (config['loss_mode']=='no_D_xt_xa_recon'):
             xa = co_data.cuda()
             xb = cl_data.cuda()
+        elif(config['loss_mode']=='no_D_AUTOVC'):
+            xa = co_data.cuda()
+            xb = cl_data[0].cuda()
         else:
             xa = co_data[0].cuda()
             xb = cl_data[0].cuda()
+        
+        ##################
         c_xa_current = self.gen.enc_content(xa)
-        s_xa_current = self.gen.enc_class_model(xa[:,:,:,:87])
-        s_xb_current = self.gen.enc_class_model(xb[:,:,:,:87])
+        if(config['loss_mode']=='no_D_AUTOVC'):
+            for count in range(len(cl_data)):
+                scode=cl_data[count][:,:,:,:87].cuda()
+                temp=self.gen.enc_class_model(scode)
+                if count==0:
+                    class_code=temp
+                else:
+                    class_code+=temp
+            s_xb_current=class_code/(len(cl_data))
+            xr_current = self.gen.decode(c_xa_current, s_xb_current)
+
+        else:
+            s_xa_current = self.gen.enc_class_model(xa[:,:,:,:87])
+            s_xb_current = self.gen.enc_class_model(xb[:,:,:,:87])
+            xr_current = self.gen.decode(c_xa_current, s_xa_current)
+        
         xt_current = self.gen.decode(c_xa_current, s_xb_current)
-        xr_current = self.gen.decode(c_xa_current, s_xa_current)
         self.train()
         return xa, xr_current, xt_current, xb
 

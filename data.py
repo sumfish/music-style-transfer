@@ -14,8 +14,8 @@ def load_npy(data_path):
     data=np.load(data_path)
     return data
 
-'''
-class AudioAutoVClDataset(data.Dataset):
+
+class AudioAutoVCDataset(data.Dataset):
     def __init__(self,
                  root,
                  label,
@@ -25,22 +25,32 @@ class AudioAutoVClDataset(data.Dataset):
         self.fix_length = fix_length
         self.data=load_npy(os.path.join(root,'data.npy'))
         self.label=load_npy(os.path.join(label,'label.npy'))
+        self.style_list=load_npy(os.path.join(label,'AutoVC.npy'))
 
     def __getitem__(self,index):
         # source
         con_audio = self.data[index]
         con_label = self.label[index]
+        find_style= int(con_label[1])
 
-        # target
-        rand = random.randint(0,len(self.data)-1)
-        sty_audio = self.data[rand]
-        sty_class = self.label[rand][1]
+        # random source style from other
+        rand_list = random.sample(self.style_list[find_style],8)
+        sty_audio = [self.data[rand] for rand in rand_list] 
 
-        
+        if self.fix_length:
+            j = random.randint(0, con_audio.shape[1] - 128)
+            con_audio = con_audio[:, j:j+128]
+            sty_audio = [sty[:, j:j+128] for sty in sty_audio]
+
+        if self.transform is not None:
+            con_audio=self.transform(con_audio) #is already float data
+            sty_audio=[self.transform(sty)for sty in sty_audio]
+
+        return con_audio, sty_audio, 0
 
     def __len__(self):
         return len(self.data)
-'''
+
 class AudioParallelDataset(data.Dataset):
     def __init__(self,
                  root,
@@ -130,4 +140,8 @@ print(test.shape)
 
 c, s, t=AudioParallelDataset('./datasets/npy_txt/hung/2s_4class_512_no_normalize/train','./datasets/npy_txt/hung/2s_4class_512_no_normalize/train', True, transform).__getitem__(16)
 print(c.shape)
+
+c, s, t=AudioAutoVCDataset('./datasets/npy_txt/hung/2s_4class_512_no_normalize_no4/train','./datasets/npy_txt/hung/2s_4class_512_no_normalize_no4/train', True, transform).__getitem__(16)
+print(len(s))
+print(t)
 '''

@@ -11,7 +11,7 @@ import shutil
 
 from tensorboardX import SummaryWriter
 
-from utils import get_config, get_train_loaders, get_parallel_loaders, make_result_folders
+from utils import get_config, get_train_loaders, get_special_loaders, make_result_folders
 from utils import write_loss, write_1images, Timer
 from trainer import Trainer
 
@@ -58,9 +58,9 @@ if opts.multigpus: ####use multiple gpu
 else:
     config['gpus'] = 1
 
-if config['loss_mode']=='no_D_xt_xa_recon':
-    print('get_parallel_dataset')
-    loaders = get_parallel_loaders(config)
+if config['loss_mode']=='no_D_xt_xa_recon' or config['loss_mode']=='no_D_AUTOVC':
+    print('get_special_dataset:{}'.format(config['loss_mode']))
+    loaders = get_special_loaders(config)
     train_loader = loaders[0]
     test_loader = loaders[1]
 else:
@@ -71,7 +71,8 @@ else:
     test_class_loader = loaders[3]
 
 # Setup logger and output folders
-model_name = os.path.splitext(os.path.basename(opts.config))[0]+'_no_D_0504_x_xt_recon'
+model_name = os.path.splitext(os.path.basename(opts.config))[0]+'_new_0507_xsc'
+#model_name = os.path.splitext(os.path.basename(opts.config))[0]+'_no_D_0503_xsc_recon_fine_tune_lr_wei_adjust'
 print('model name:{}'.format(model_name))
 # 建立實體資料的存放
 train_writer = SummaryWriter(
@@ -88,7 +89,7 @@ iterations = trainer.resume(checkpoint_directory,
 print('LOSS MODE:{}'.format(config['loss_mode']))
 
 while True:
-    if config['loss_mode']=='no_D_xt_xa_recon':
+    if config['loss_mode']=='no_D_xt_xa_recon' or config['loss_mode']=='no_D_AUTOVC':
         for it, (co_data, cl_data, trans) in enumerate(train_loader):  #####class=style
             g_loss = trainer.gen_update(co_data, cl_data, config,
                                     opts.multigpus, trans)
