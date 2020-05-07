@@ -14,15 +14,6 @@ from torch.optim import lr_scheduler
 
 from funit_model import FUNITModel
 
-############## ????????
-def update_average(model_tgt, model_src, beta=0.999):
-    with torch.no_grad():
-        param_dict_src = dict(model_src.named_parameters())
-        for p_name, p_tgt in model_tgt.named_parameters():
-            p_src = param_dict_src[p_name]
-            assert(p_src is not p_tgt)
-            p_tgt.copy_(beta*p_tgt + (1. - beta)*p_src)
-
 
 class Trainer(nn.Module):
     def __init__(self, cfg):
@@ -49,31 +40,68 @@ class Trainer(nn.Module):
                 p.requires_grad= False
             for p in self.model.gen.enc_class_model.parameters():
                 p.requires_grad= False
-
+            
+            base_params = filter(lambda p : id(p) not in style_en_params+cont_en_params, self.model.gen.parameters())
+            self.gen_opt = torch.optim.RMSprop([
+                {'params': base_params}],
+                lr=lr_gen, weight_decay=cfg['weight_decay'])
+                
+            '''
+            self.gen_opt = torch.optim.RMSprop(
+                [p for p in self.model.gen.parameters() if p.requires_grad],
+                lr=lr_dis, weight_decay=cfg['weight_decay'])
+            '''
+            '''
+            
             self.gen_opt = torch.optim.RMSprop(
                 [p for p in gen_params if p.requires_grad],
                 lr=lr_dis, weight_decay=cfg['weight_decay'])
-        
+            
+            torch.save({'gen': self.model.gen.state_dict(),
+                    'gen.dec':self.model.gen.dec.state_dict()}, 'gen.pt') 
+            '''
+            '''
+            self.gen_opt = torch.optim.RMSprop(filter(lambda p: p.requires_grad, self.model.gen.parameters()), 
+                                        lr=lr_dis, weight_decay=cfg['weight_decay'])
+            '''
         else:
-            #################### parameter
-            base_params = filter(lambda p : id(p) not in style_en_params+cont_en_params, self.model.gen.parameters())
-            #print(list(base_params))
+            if (cfg['fixed_s']==True):
+                print('----------Freeze the style encoder parameter!!!!----------')
+                style_en_pt=torch.load(cfg['style_pt'])
+                self.model.gen.enc_class_model.load_state_dict(style_en_pt['model'])
 
-            self.gen_opt = torch.optim.RMSprop([
-            {'params': base_params},
-            {'params': self.model.gen.enc_content.parameters(),'lr':(lr_gen/10)},
-            {'params': self.model.gen.enc_class_model.parameters(),'lr':(lr_gen/10)}],
-            lr=lr_gen, weight_decay=cfg['weight_decay'])
+                print('----------Freeze the style encoder parameter!!!!----------')
+                for p in self.model.gen.enc_class_model.parameters():
+                    p.requires_grad= False
+
+                #################### parameter
+                base_params = filter(lambda p : id(p) not in style_en_params+cont_en_params, self.model.gen.parameters())
+                #print(list(base_params))
+
+                self.gen_opt = torch.optim.RMSprop([
+                {'params': base_params},
+                {'params': self.model.gen.enc_content.parameters(),'lr':(lr_gen/2)}],
+                lr=lr_gen, weight_decay=cfg['weight_decay'])
+
+            else: 
+                #################### parameter
+                base_params = filter(lambda p : id(p) not in style_en_params+cont_en_params, self.model.gen.parameters())
+                #print(list(base_params))
+
+                self.gen_opt = torch.optim.RMSprop([
+                {'params': base_params},
+                {'params': self.model.gen.enc_content.parameters(),'lr':(lr_gen/2)},
+                {'params': self.model.gen.enc_class_model.parameters(),'lr':(lr_gen/2)}],
+                lr=lr_gen, weight_decay=cfg['weight_decay'])
         
         self.dis_opt = torch.optim.RMSprop(
-            [p for p in dis_params if p.requires_grad],
+            [p for p in self.model.dis.parameters() if p.requires_grad],
             lr=lr_gen, weight_decay=cfg['weight_decay'])
     
         
         ##################### not understand
-        self.dis_scheduler = get_scheduler(self.dis_opt, cfg) 
-        self.gen_scheduler = get_scheduler(self.gen_opt, cfg) 
-        self.apply(weights_init(cfg['init'])) 
+        #self.dis_scheduler = get_scheduler(self.dis_opt, cfg) 
+        #self.gen_scheduler = get_scheduler(self.gen_opt, cfg) 
  
 
     def gen_update(self, co_data, cl_data, hp, multigpus, trans=None):
@@ -100,6 +128,14 @@ class Trainer(nn.Module):
             self.loss_gen_total = torch.mean(total)
             self.loss_gen_recon_x = torch.mean(xr)
             self.loss_gen_recon_trans = torch.mean(xtr)
+
+        elif(hp['loss_mode']=='no_D_AUTOVC'):
+            total, xr, cr, sr = self.model(co_data, cl_data, hp, 'gen_update')
+            self.loss_gen_total = torch.mean(total)
+            self.loss_gen_recon_x = torch.mean(xr)
+            self.loss_gen_recon_c = torch.mean(cr)
+            if hp['fixed_s']==False:
+                self.loss_gen_recon_s = torch.mean(sr)
 
         elif(hp['loss_mode']=='only_self_recon'):
             xr = self.model(co_data, cl_data, hp, 'gen_update')
@@ -146,8 +182,8 @@ class Trainer(nn.Module):
         self.dis_opt.load_state_dict(state_dict['dis'])
         self.gen_opt.load_state_dict(state_dict['gen'])
         '''
-        self.dis_scheduler = get_scheduler(self.dis_opt, hp, iterations)
-        self.gen_scheduler = get_scheduler(self.gen_opt, hp, iterations)
+        #self.dis_scheduler = get_scheduler(self.dis_opt, hp, iterations)
+        #self.gen_scheduler = get_scheduler(self.gen_opt, hp, iterations)
         print('Resume from iteration %d' % iterations)
         return iterations
 
@@ -206,23 +242,4 @@ def get_scheduler(optimizer, hp, it=-1):
     return scheduler
 
 
-def weights_init(init_type='gaussian'):
-    def init_fun(m):
-        classname = m.__class__.__name__
-        if (classname.find('Conv') == 0 or classname.find(
-                'Linear') == 0) and hasattr(m, 'weight'):
-            if init_type == 'gaussian':
-                init.normal_(m.weight.data, 0.0, 0.02)
-            elif init_type == 'xavier':
-                init.xavier_normal_(m.weight.data, gain=math.sqrt(2))
-            elif init_type == 'kaiming':
-                init.kaiming_normal_(m.weight.data, a=0, mode='fan_in')
-            elif init_type == 'orthogonal':
-                init.orthogonal_(m.weight.data, gain=math.sqrt(2))
-            elif init_type == 'default':
-                pass
-            else:
-                assert 0, "Unsupported initialization: {}".format(init_type)
-            if hasattr(m, 'bias') and m.bias is not None:
-                init.constant_(m.bias.data, 0.0)
-    return init_fun
+
