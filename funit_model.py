@@ -98,10 +98,14 @@ class FUNITModel(nn.Module):
                 # x_a recons
                 l_x_rec = recon_criterion(xr, xa)
                 
-                ## weight setting from x_rec=1 c_rec=1
-                # https://github.com/auspicious3000/autovc
-                l_total = hp['r_w'] * l_x_rec + hp['r_w']* (l_ca_rec+l_sb_rec)*0.5 
-                l_total.backward()
+                if (hp['fixed_s']==True):
+                    l_total = hp['r_w'] * l_x_rec + hp['r_w']* l_ca_rec
+                    l_total.backward()
+                else:
+                    ## weight setting from x_rec=1 c_rec=1
+                    # https://github.com/auspicious3000/autovc
+                    l_total = hp['r_w'] * l_x_rec + hp['r_w']* (l_ca_rec+l_sb_rec)*0.5 
+                    l_total.backward()
 
                 return l_total, l_x_rec, l_ca_rec, l_sb_rec
 
@@ -123,15 +127,16 @@ class FUNITModel(nn.Module):
                 c_xt = self.gen.enc_content(xt)
                 l_c_rec = recon_criterion(c_xa, c_xt)
 
+                # c_a recons
+                s_xt = self.gen.enc_class_model(xt)
+                l_s_rec = recon_criterion(s_xb, s_xt)
+
                 if (hp['fixed_s']==True):
                     l_total= l_x_rec+l_c_rec
                     l_total.backward()
 
-                    return l_total, l_x_rec, l_c_rec, 0
+                    return l_total, l_x_rec, l_c_rec, l_s_rec
                 else:
-                    # c_a recons
-                    s_xt = self.gen.enc_class_model(xt)
-                    l_s_rec = recon_criterion(s_xb, s_xt)
 
                     l_total= l_x_rec+ 0.5*(l_c_rec+l_s_rec)
                     l_total.backward()

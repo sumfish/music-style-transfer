@@ -45,7 +45,7 @@ class Trainer(nn.Module):
             self.gen_opt = torch.optim.RMSprop([
                 {'params': base_params}],
                 lr=lr_gen, weight_decay=cfg['weight_decay'])
-                
+
             '''
             self.gen_opt = torch.optim.RMSprop(
                 [p for p in self.model.gen.parameters() if p.requires_grad],
@@ -134,8 +134,7 @@ class Trainer(nn.Module):
             self.loss_gen_total = torch.mean(total)
             self.loss_gen_recon_x = torch.mean(xr)
             self.loss_gen_recon_c = torch.mean(cr)
-            if hp['fixed_s']==False:
-                self.loss_gen_recon_s = torch.mean(sr)
+            self.loss_gen_recon_s = torch.mean(sr)
 
         elif(hp['loss_mode']=='only_self_recon'):
             xr = self.model(co_data, cl_data, hp, 'gen_update')
