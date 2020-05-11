@@ -147,7 +147,7 @@ class Inferencer(object):
         wav_data = melspectrogram2wav(dec)
         return wav_data, dec
 
-    def write_images(self, ori_mel, trans_mel, recon_mel, outputpath):
+    def write_images(self, ori_mel, tar_mel, trans_mel, recon_mel, outputpath):
         
         librosa.display.specshow(trans_mel, hop_length=256)  #y_axis='mel'
         #plt.colorbar(format='%+2.0f dB')
@@ -168,6 +168,13 @@ class Inferencer(object):
         plt.set_cmap("magma")
         #plt.set_cmap("gnuplot")
         plt.savefig(os.path.join(outputpath,'recons.png'), dpi='figure', bbox_inches='tight')
+        plt.clf()
+
+        librosa.display.specshow(tar_mel, hop_length=256)
+        plt.colorbar()
+        plt.set_cmap("magma")
+        #plt.set_cmap("gnuplot")
+        plt.savefig(os.path.join(outputpath,'target.png'), dpi='figure', bbox_inches='tight')
         plt.clf()
 
     def inference_from_path(self):
@@ -197,7 +204,7 @@ class Inferencer(object):
         mkdir(outputpath)
 
         ###### outputdata
-        self.write_images(src_mel.detach().cpu().numpy().transpose((1,0)),conv_mel,recon_mel,outputpath)
+        self.write_images(src_mel.detach().cpu().numpy().transpose((1,0)),tar_mel.detach().cpu().numpy().transpose((1,0)),conv_mel,recon_mel,outputpath)
         self.write_wav_to_file(conv_wav, os.path.join(outputpath,'output.wav'))
         self.write_wav_to_file(recon_wav, os.path.join(outputpath,'recons.wav'))
         
