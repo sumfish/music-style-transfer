@@ -98,7 +98,8 @@ class FUNITModel(nn.Module):
                 # x_a recons
                 l_x_rec = recon_criterion(xr, xa)
                 
-                if (hp['fixed_s']==True):
+                if(hp['not_use_style_loss']):
+                #if (hp['freeze_whom']=='only_s'):
                     l_total = hp['r_w'] * l_x_rec + hp['r_w']* l_ca_rec
                     l_total.backward()
                 else:
@@ -127,17 +128,17 @@ class FUNITModel(nn.Module):
                 c_xt = self.gen.enc_content(xt)
                 l_c_rec = recon_criterion(c_xa, c_xt)
 
-                # c_a recons
+                # s_b recons
                 s_xt = self.gen.enc_class_model(xt)
                 l_s_rec = recon_criterion(s_xb, s_xt)
 
-                if (hp['fixed_s']==True):
+                if(hp['not_use_style_loss']):
+                #if(hp['freeze_whom']=='only_s'):
                     l_total= l_x_rec+l_c_rec
                     l_total.backward()
 
                     return l_total, l_x_rec, l_c_rec, l_s_rec
                 else:
-
                     l_total= l_x_rec+ 0.5*(l_c_rec+l_s_rec)
                     l_total.backward()
                     

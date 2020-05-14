@@ -25,9 +25,8 @@ class Trainer(nn.Module):
         gen_params = list(self.model.gen.parameters())
         style_en_params = list(map(id, self.model.gen.enc_class_model.parameters()))
         cont_en_params = list(map(id, self.model.gen.enc_content.parameters()))
-
-        ########## load pre-train
-        if cfg['pre_train']:
+        
+        if cfg['pre_train']=='all':
             print('----------Load pre-train model!!!!----------')
             style_en_pt=torch.load(cfg['style_pt'])
             content_en_pt=torch.load(cfg['content_pt'])
@@ -46,24 +45,22 @@ class Trainer(nn.Module):
                 {'params': base_params}],
                 lr=lr_gen, weight_decay=cfg['weight_decay'])
 
-            '''
-            self.gen_opt = torch.optim.RMSprop(
-                [p for p in self.model.gen.parameters() if p.requires_grad],
-                lr=lr_dis, weight_decay=cfg['weight_decay'])
-            '''
-            '''
+        elif cfg['pre_train']=='only_s':
+            print('----------Load Style pre-train model!!!!----------')
+            style_en_pt=torch.load(cfg['style_pt'])
+            self.model.gen.enc_class_model.load_state_dict(style_en_pt['model'])
+        
+            ########## freeze encoder parameter
+            print('----------Freeze the style encoder parameter!!!!----------')
+            for p in self.model.gen.enc_class_model.parameters():
+                p.requires_grad= False
             
-            self.gen_opt = torch.optim.RMSprop(
-                [p for p in gen_params if p.requires_grad],
-                lr=lr_dis, weight_decay=cfg['weight_decay'])
-            
-            torch.save({'gen': self.model.gen.state_dict(),
-                    'gen.dec':self.model.gen.dec.state_dict()}, 'gen.pt') 
-            '''
-            '''
-            self.gen_opt = torch.optim.RMSprop(filter(lambda p: p.requires_grad, self.model.gen.parameters()), 
-                                        lr=lr_dis, weight_decay=cfg['weight_decay'])
-            '''
+            base_params = filter(lambda p : id(p) not in style_en_params+cont_en_params, self.model.gen.parameters())
+            self.gen_opt = torch.optim.RMSprop([
+                {'params': base_params},
+                {'params': self.model.gen.enc_content.parameters(),'lr':(lr_gen)}],
+                lr=lr_gen, weight_decay=cfg['weight_decay'])
+
         else:
             if (cfg['fixed_s']==True):
                 print('----------Freeze the style encoder parameter!!!!----------')
