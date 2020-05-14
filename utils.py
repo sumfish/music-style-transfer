@@ -149,7 +149,7 @@ def get_train_loaders(conf):
 
 
 def get_config(config):
-    with open(config, 'r') as stream:
+    with open(config, 'r', encoding="utf-8") as stream:
         return yaml.load(stream, Loader=yaml.FullLoader)
 
 
