@@ -224,7 +224,7 @@ if __name__ == '__main__':
     parser.add_argument('-sample_rate', '-sr', help='sample rate', default=22050, type=int)
     args = parser.parse_args()
     # load config file 
-    with open(args.config) as f:
+    with open(args.config, encoding="utf-8") as f:
         config = yaml.load(f)
     inferencer = Inferencer(config=config, args=args)
     inferencer.inference_from_path()
