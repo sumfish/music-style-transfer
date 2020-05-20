@@ -315,6 +315,7 @@ class ContentEncoder(nn.Module):   #new ,1d ,no connected layer
         #print('level 1(after res):{}'.format(x.shape))
         #input()
         return temp
+        #return x
 
 class res_block_up(nn.Module):
     def __init__(self, inp, out, kernel, stride_list):
@@ -355,7 +356,7 @@ class Decoder(nn.Module):
     def __init__(self, mel_d, kernel):
         super(Decoder, self).__init__()
         self.c_out=mel_d ###128=mel dimension
-        self.c_in=128 #128+1
+        self.c_in=128 #65
         self.c_m=128
         self.kernel=kernel
         self.stride=[1]
