@@ -8,7 +8,7 @@ snapshot_save_iter: 5000      # How often do you want to save trained models
 log_iter: 1                   # How often do you want to log the training stats
 
 # optimization options
-max_iter: 200000             # maximum number of training iterations
+max_iter: 350000             # maximum number of training iterations
 weight_decay: 0.0001          # weight decay
 lr_gen: 0.0001                # learning rate for the generator
 lr_dis: 0.0001                # learning rate for the discriminator
@@ -59,19 +59,20 @@ label_test: ./datasets/npy_txt/hung/2s_4class_512_no_normalize_no4/test
 
 #### 512
 style_pt: ./pre_ckpt/un_normalize_512_T=128/style/style_best_283.pt
-content_pt: ./pre_ckpt/un_normalize_512_T=128/content/content_044_en_best.pt
-pre_train: no      #all - pretrain style content都先定住 train一下decoder再fine-tune
+content_pt: ./pre_ckpt/un_normalize_512_T=128/content/content_049_en_best.pt
+pre_train: only_s      #all - pretrain style content都先定住 train一下decoder再fine-tune
                        #only_s - 只load style去train的版本 要觀察有沒content pretrain下的差異
 not_use_style_loss: False #not use style loss    
 fixed_s: False      # 如果是resume ->不load pretrain(pre_train=no)的情況下 定住style encoder去fine-tune
                     # 如果沒有resume ->load style的情況下 定住style encoder去fine-tune
-exchange_train_mode: True
+exchange_train_mode: False
+exchange_fre: 500   # exchage frequency
 
 # inference options
 outpath: recons_output         # test output path
-source: test_audio/test/09_00.wav   # source wave path
-target: test_audio/test/10_03.mp3   # target wave path
-model: outputs/funit_music_new_0513_no_pre-content_use_styleloss/checkpoints  # model ckpt
+source: test_audio/test/10_00.mp3   # source wave path
+target: test_audio/test/09_02.mp3   # target wave path
+model: outputs/funit_music_new_0520_Auto_blank_fine_tune_fixed_s/checkpoints  # model ckpt
 content_size: 128
 style_size: 87
 
