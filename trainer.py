@@ -19,6 +19,7 @@ class Trainer(nn.Module):
     def __init__(self, cfg):
         super(Trainer, self).__init__()
         self.model = FUNITModel(cfg)
+        self.config = cfg
         lr_gen = cfg['lr_gen']
         lr_dis = cfg['lr_dis']
         dis_params = list(self.model.dis.parameters())
@@ -45,7 +46,7 @@ class Trainer(nn.Module):
                 {'params': base_params}],
                 lr=lr_gen, weight_decay=cfg['weight_decay'])
 
-        elif cfg['pre_train']=='only_s':
+        elif cfg['pre_train']=='only_s': ###not use content pretrain
             print('----------Load Style pre-train model!!!!----------')
             style_en_pt=torch.load(cfg['style_pt'])
             self.model.gen.enc_class_model.load_state_dict(style_en_pt['model'])
@@ -63,7 +64,7 @@ class Trainer(nn.Module):
 
         else:
             if (cfg['fixed_s']==True):
-                print('----------Freeze the style encoder parameter!!!!----------')
+                print('----------Load the style encoder parameter!!!!----------')
                 style_en_pt=torch.load(cfg['style_pt'])
                 self.model.gen.enc_class_model.load_state_dict(style_en_pt['model'])
 
@@ -81,15 +82,31 @@ class Trainer(nn.Module):
                 lr=lr_gen, weight_decay=cfg['weight_decay'])
 
             else: 
-                #################### parameter
-                base_params = filter(lambda p : id(p) not in style_en_params+cont_en_params, self.model.gen.parameters())
-                #print(list(base_params))
+                if(cfg['exchange_train_mode']==True):
+                    ### train content first
+                    print('-------exchange_train_mode!!!!-------')
+                    print('----------Freeze the style encoder parameter!!!!----------')
+                    for p in self.model.gen.enc_class_model.parameters():
+                        p.requires_grad= False
 
-                self.gen_opt = torch.optim.RMSprop([
-                {'params': base_params},
-                {'params': self.model.gen.enc_content.parameters(),'lr':(lr_gen/2)},
-                {'params': self.model.gen.enc_class_model.parameters(),'lr':(lr_gen/2)}],
-                lr=lr_gen, weight_decay=cfg['weight_decay'])
+                    #################### parameter
+                    base_params = filter(lambda p : id(p) not in style_en_params+cont_en_params, self.model.gen.parameters())
+
+                    self.gen_opt = torch.optim.RMSprop([
+                    {'params': base_params},
+                    {'params': self.model.gen.enc_content.parameters(),'lr':(lr_gen)}],
+                    lr=lr_gen, weight_decay=cfg['weight_decay']) 
+
+                else:
+                    #################### parameter
+                    base_params = filter(lambda p : id(p) not in style_en_params+cont_en_params, self.model.gen.parameters())
+                    #print(list(base_params))
+
+                    self.gen_opt = torch.optim.RMSprop([
+                    {'params': base_params},
+                    {'params': self.model.gen.enc_content.parameters(),'lr':(lr_gen/2)},
+                    {'params': self.model.gen.enc_class_model.parameters(),'lr':(lr_gen/2)}],
+                    lr=lr_gen, weight_decay=cfg['weight_decay'])
         
         self.dis_opt = torch.optim.RMSprop(
             [p for p in self.model.dis.parameters() if p.requires_grad],
@@ -100,8 +117,32 @@ class Trainer(nn.Module):
         #self.dis_scheduler = get_scheduler(self.dis_opt, cfg) 
         #self.gen_scheduler = get_scheduler(self.gen_opt, cfg) 
  
+    def setup_exchange_mode(self, mode, cfg):
+        lr_gen = cfg['lr_gen']
+        style_en_params = list(map(id, self.model.gen.enc_class_model.parameters()))
+        cont_en_params = list(map(id, self.model.gen.enc_content.parameters()))
+        
+        if mode:  
+            print('---Start training content!!!!---')
+            ###########  style freeze
+            base_params = filter(lambda p : id(p) not in style_en_params+cont_en_params, self.model.gen.parameters())
+            #print(list(base_params))
+            self.gen_opt = torch.optim.RMSprop([
+            {'params': base_params},
+            {'params': self.model.gen.enc_content.parameters(),'lr':(lr_gen)}],
+            lr=lr_gen, weight_decay=cfg['weight_decay'])
+        else:
+            print('---Start training style!!!!---')
+            ###########  content freeze
+            base_params = filter(lambda p : id(p) not in style_en_params+cont_en_params, self.model.gen.parameters())
+            #print(list(base_params))
+            self.gen_opt = torch.optim.RMSprop([
+            {'params': base_params},
+            {'params': self.model.gen.enc_class_model.parameters(),'lr':(lr_gen)}],
+            lr=lr_gen, weight_decay=cfg['weight_decay'])
 
-    def gen_update(self, co_data, cl_data, hp, multigpus, trans=None):
+
+    def gen_update(self, co_data, cl_data, hp, multigpus, trans=None, train_mode=None):
         self.gen_opt.zero_grad()
         
         if(hp['loss_mode']=='D'):
@@ -127,7 +168,7 @@ class Trainer(nn.Module):
             self.loss_gen_recon_trans = torch.mean(xtr)
 
         elif(hp['loss_mode']=='no_D_AUTOVC'):
-            total, xr, cr, sr = self.model(co_data, cl_data, hp, 'gen_update')
+            total, xr, cr, sr = self.model(co_data, cl_data, hp, 'gen_update', trans, train_mode)
             self.loss_gen_total = torch.mean(total)
             self.loss_gen_recon_x = torch.mean(xr)
             self.loss_gen_recon_c = torch.mean(cr)

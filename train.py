@@ -71,7 +71,7 @@ else:
     test_class_loader = loaders[3]
 
 # Setup logger and output folders
-model_name = os.path.splitext(os.path.basename(opts.config))[0]+'_new_0507_xsc'
+model_name = os.path.splitext(os.path.basename(opts.config))[0]+'_new_0520_Auto_blank'
 #model_name = os.path.splitext(os.path.basename(opts.config))[0]+'_no_D_0503_xsc_recon_fine_tune_lr_wei_adjust'
 print('model name:{}'.format(model_name))
 # 建立實體資料的存放
@@ -88,10 +88,20 @@ iterations = trainer.resume(checkpoint_directory,
 
 print('LOSS MODE:{}'.format(config['loss_mode']))
 
+content_train=True
 while True:
     if config['loss_mode']=='no_D_xt_xa_recon' or config['loss_mode']=='no_D_AUTOVC':
         for it, (co_data, cl_data, trans) in enumerate(train_loader):  #####class=style
-            g_loss = trainer.gen_update(co_data, cl_data, config,
+
+            if(config['exchange_train_mode']):
+                g_loss = trainer.gen_update(co_data, cl_data, config,
+                                    opts.multigpus, trans, content_train)
+                if((iterations+1)%config['exchange_fre']==0):
+                    content_train=not(content_train)
+                    trainer.setup_exchange_mode(content_train,config)
+
+            else:   
+                g_loss = trainer.gen_update(co_data, cl_data, config,
                                     opts.multigpus, trans)
             torch.cuda.synchronize() #####g.d together
             print('G recon_x loss: %.4f' % (g_loss))

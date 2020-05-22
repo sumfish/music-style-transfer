@@ -21,7 +21,7 @@ class FUNITModel(nn.Module):
         self.gen = FewShotGen(hp['gen'])
         self.dis = GPPatchMcResDis(hp['dis'])
 
-    def forward(self, co_data, cl_data, hp, mode, trans=None):
+    def forward(self, co_data, cl_data, hp, mode, trans=None, train_mode=None):
         if(hp['loss_mode']=='no_D_xt_xa_recon'):
             xa = co_data.cuda()
             xb = cl_data.cuda()
@@ -133,14 +133,22 @@ class FUNITModel(nn.Module):
                 l_s_rec = recon_criterion(s_xb, s_xt)
 
                 if(hp['not_use_style_loss']):
-                #if(hp['freeze_whom']=='only_s'):
                     l_total= l_x_rec+l_c_rec
                     l_total.backward()
 
                     return l_total, l_x_rec, l_c_rec, l_s_rec
                 else:
-                    l_total= l_x_rec+ 0.5*(l_c_rec+l_s_rec)
-                    l_total.backward()
+                    if(hp['exchange_train_mode']):
+                        if train_mode: #True->train content
+                            l_total= l_x_rec+ l_c_rec
+                            l_total.backward()
+                        else:
+                            l_total= l_x_rec+ l_s_rec
+                            l_total.backward()
+
+                    else:    
+                        l_total= l_x_rec+ 0.5*(l_c_rec+l_s_rec)
+                        l_total.backward()
                     
                     return l_total, l_x_rec, l_c_rec, l_s_rec
 
