@@ -28,6 +28,7 @@ class FUNITModel(nn.Module):
             trans = trans.cuda()
         elif(hp['loss_mode']=='no_D_AUTOVC'):
             xa = co_data.cuda()
+            trans = trans.cuda()
             ### target in style method below
         else:
             xa = co_data[0].cuda()
@@ -38,7 +39,7 @@ class FUNITModel(nn.Module):
 
         if mode == 'gen_update':
             # content method
-            c_xa = self.gen.enc_content(xa)
+            c_xa, encoder_layer_outputs = self.gen.enc_content(xa)
 
             # style method
             if(hp['loss_mode']=='no_D_AUTOVC'):
@@ -57,7 +58,7 @@ class FUNITModel(nn.Module):
             if(hp['loss_mode']!='no_D_AUTOVC'):
                 xr = self.gen.decode(c_xa, s_xa)  # reconstruction
             ### every mode needs
-            xt = self.gen.decode(c_xa, s_xb)  # translation
+            xt = self.gen.decode(c_xa, s_xb, encoder_layer_outputs)  # translation
 
             
             if(hp['loss_mode']=='D'):
@@ -125,7 +126,7 @@ class FUNITModel(nn.Module):
                 l_x_rec = recon_criterion(xt, xa)  #trans is recons
                 
                 # c_a recons
-                c_xt = self.gen.enc_content(xt)
+                c_xt, _ = self.gen.enc_content(xt)
                 l_c_rec = recon_criterion(c_xa, c_xt)
 
                 # s_b recons
@@ -199,7 +200,7 @@ class FUNITModel(nn.Module):
             xb = cl_data[0].cuda()
         
         ##################
-        c_xa_current = self.gen.enc_content(xa)
+        c_xa_current, encoder_layer_outputs = self.gen.enc_content(xa)
         if(config['loss_mode']=='no_D_AUTOVC'):
             for count in range(len(cl_data)):
                 scode=cl_data[count][:,:,:,:87].cuda()
@@ -209,14 +210,14 @@ class FUNITModel(nn.Module):
                 else:
                     class_code+=temp
             s_xb_current=class_code/(len(cl_data))
-            xr_current = self.gen.decode(c_xa_current, s_xb_current)
+            xr_current = self.gen.decode(c_xa_current, s_xb_current, encoder_layer_outputs)
 
         else:
             s_xa_current = self.gen.enc_class_model(xa[:,:,:,:87])
             s_xb_current = self.gen.enc_class_model(xb[:,:,:,:87])
             xr_current = self.gen.decode(c_xa_current, s_xa_current)
         
-        xt_current = self.gen.decode(c_xa_current, s_xb_current)
+        xt_current = self.gen.decode(c_xa_current, s_xb_current, encoder_layer_outputs)
         self.train()
         return xa, xr_current, xt_current, xb
 

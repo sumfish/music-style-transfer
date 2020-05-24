@@ -150,7 +150,7 @@ class FewShotGen(nn.Module):
         return content, class_code
     '''
 
-    def decode(self, content, model_code):
+    def decode(self, content, model_code, encoder_layer_outputs):
         # decode content and style codes to an image
         # concatenate
         model_code_flat=model_code.view(-1)  #1d
@@ -166,7 +166,7 @@ class FewShotGen(nn.Module):
         #print(content)
         combined=torch.cat((content,temp_style),dim=1)
         #print(combined.shape)
-        images = self.dec(combined)
+        images = self.dec(combined, encoder_layer_outputs)
         return images
 
 class res_block2d(nn.Module):
@@ -291,21 +291,27 @@ class ContentEncoder(nn.Module):   #new ,1d ,no connected layer
             #res_block1d(self.c_m, self.c_out, self.kernel, self.stride),
         )
     def forward(self, _input):
+        ### skip connection
+        encoder_layer_outputs = []
+        
         x = _input
         #print('original:{}'.format(x.shape))
         x = x.view(-1, x.size(2), x.size(3))
         #print('after view:{}'.format(x.shape)) 
-        
-        #### conv bank??????
 
         #### dimension up
         x = self.conv1(x)
         x = self.norm_layer(x)
         x = self.act(x)
         x = self.drop_out(x)
+        encoder_layer_outputs.append(x)
 
         #### residual
-        x = self.head(x)
+        #x = self.head(x)
+        for i in range(3):
+            x = self.head[i](x)
+            encoder_layer_outputs.append(x)
+
         x = self.conv_last2(x)
         temp = x
         x = self.conv_last1(x)
@@ -314,8 +320,8 @@ class ContentEncoder(nn.Module):   #new ,1d ,no connected layer
         #x = x.view(-1, x.size(2))
         #print('level 1(after res):{}'.format(x.shape))
         #input()
-        #return temp
-        return x
+        return temp, encoder_layer_outputs
+        #return x
 
 class res_block_up(nn.Module):
     def __init__(self, inp, out, kernel, stride_list):
@@ -356,7 +362,8 @@ class Decoder(nn.Module):
     def __init__(self, mel_d, kernel):
         super(Decoder, self).__init__()
         self.c_out=mel_d ###128=mel dimension
-        self.c_in=65 #128+1
+        #self.c_in=80
+        self.c_in=128 #128
         self.c_m=128
         self.kernel=kernel
         self.stride=[1]
@@ -364,32 +371,39 @@ class Decoder(nn.Module):
         #self.conv_mid = nn.Conv1d(self.c_m, self.c_m, kernel_size=2) 
         self.conv_last = nn.Conv1d(self.c_m, self.c_out, kernel_size=1) 
         self.res1=res_block_up(self.c_m, self.c_m, self.kernel, self.stride)
-        
+        self.up = Upsample(scale_factor=2)
+
         self.head = nn.Sequential(
             #PrintLayer(),
-            Upsample(scale_factor=2),
+            #Upsample(scale_factor=2),
             res_block_up(self.c_m, self.c_m, self.kernel, self.stride),
-            Upsample(scale_factor=2),
+            #Upsample(scale_factor=2),
             #PrintLayer(),
             res_block_up(self.c_m, self.c_m, self.kernel, self.stride),
-            Upsample(scale_factor=2),
+            #Upsample(scale_factor=2),
             #PrintLayer(),
             res_block_up(self.c_m, self.c_m, self.kernel, self.stride),
-            Upsample(scale_factor=2),
+            #Upsample(scale_factor=2),
             #PrintLayer(),
-            res_block_up(self.c_m, self.c_m, self.kernel, self.stride),
-            Upsample(scale_factor=2),
             res_block_up(self.c_m, self.c_m, self.kernel, self.stride),
             #Upsample(scale_factor=2),
             #PrintLayer(),
         )
 
-    def forward(self, x):
+    def forward(self, x, encoder_layer_outputs):
         x = self.conv_first(x)
         #x = upsample(x,scale_factor=2)
         #x = self.res1(x)
         #x = self.conv_mid(x)
-        x = self.head(x)
+
+        #x = self.head(x)
+        skip_id=0
+        for i in range(4):
+            x = self.up(x)
+            x = self.head[i](x)
+            x = x+ encoder_layer_outputs[-(skip_id+1)]
+            skip_id=skip_id+1
+            
         x = self.conv_last(x)
         x = x.view(-1,1,x.size(1),x.size(2))
         #print('decoder:{}'.format(x.shape))
